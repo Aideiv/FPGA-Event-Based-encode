@@ -1,0 +1,151 @@
+# config.yaml — FPGA Collision Avoidance Configuration
+#
+# Central configuration for the event-based drone collision avoidance system.
+# All constants are mirrored across:
+#   - models/params.py (FPGAParams)
+#   - fpga/*.h (HLS compile-time constants)
+#   - arm/*.h (ARM run-time parameters)
+#
+# When changing values, update all three locations.
+
+# ---------------------------------------------------------------------------
+# Pipeline Parameters
+# ---------------------------------------------------------------------------
+pipeline:
+  # Maximum events in ring buffer
+  max_events: 4096
+  
+  # k-NN graph: number of neighbors per event
+  k_neighbors: 32
+  
+  # Spatial hash: grid cell size (normalized coordinates)
+  grid_radius: 0.15
+  
+  # Encoder dimension (must match HLS D_ENC constant)
+  encoder_dim: 128
+  
+  # Frequency encoding scale factor
+  alpha_enc: 8
+
+# ---------------------------------------------------------------------------
+# Coordinate Normalization
+# These scale raw pixel/timestamp values to [~0, ~1) range
+# ---------------------------------------------------------------------------
+normalization:
+  # Spatial coordinate:  pixels → normalized = x * PXL_RADIUS
+  # For 640px-wide image: 640 * 0.0225 ≈ 14.4
+  # Sensor radius (in pixels): 1 / pxl_radius
+  pxl_radius: 0.0225
+  
+  # Temporal coordinate:  μs → normalized = t * T_RADIUS
+  # For 100μs events: 100 * 0.01 = 1.0
+  # Time window (in μs): 1 / t_radius
+  t_radius: 0.01  # 100μs window
+
+# ---------------------------------------------------------------------------
+# Camera Calibration (Prophesee Gen4 / Inivation DVXplorer)
+# ---------------------------------------------------------------------------
+camera:
+  # Image dimensions
+  width: 640
+  height: 480
+  
+  # Field of view (radians)
+  fov: 1.2  # ~68°
+  
+  # AER interface type (parallel or spi)
+  interface: "parallel"
+  
+  # Pixel clock (MHz)
+  pixel_clock_mhz: 100
+  
+  # Data rate (Mevents/sec)
+  max_event_rate: 10  # 10M events/sec at 100MHz
+
+# ---------------------------------------------------------------------------
+# FPGA Clock Configuration
+# ---------------------------------------------------------------------------
+fpga:
+  # System clock (Hz)
+  clock_freq_hz: 100000000  # 100MHz
+  
+  # Inference trigger period (clock cycles)
+  # 100,000 cycles @ 100MHz = 1ms = 1kHz
+  inference_period: 100000
+  
+  # PWM frequency (Hz) — standard ESC protocol
+  pwm_freq_hz: 50
+
+# ---------------------------------------------------------------------------
+# Collision Prediction (ARM-side)
+# ---------------------------------------------------------------------------
+collision_prediction:
+  # TTC thresholds (seconds)
+  safety_time_threshold: 1.0    # TTC < 1s → start evasion
+  critical_time_threshold: 0.5  # TTC < 0.5s → hard evasion
+  
+  # Clustering parameters
+  cluster_radius: 0.05       # Normalized spatial distance
+  flow_similarity: 0.7       # Cos similarity for flow grouping
+  min_events_per_cluster: 50 # Filter noise clusters
+  
+  # Safe bearing
+  safe_bearing_margin: 0.1  # Radians margin around objects
+
+# ---------------------------------------------------------------------------
+# Evasion Controller (ARM-side)
+# ---------------------------------------------------------------------------
+evasion_controller:
+  # Velocity limits (m/s)
+  max_horizontal_velocity: 5.0
+  max_vertical_velocity: 3.0
+  max_yaw_rate: 3.0  # rad/s (~172°/s)
+  
+  # Potential field parameters
+  repulsion_strength: 1.0
+  repulsion_decay: 2.0
+  
+  # Evasion strategy
+  lateral_gain: 0.7           # Lateral vs longitudinal ratio
+  vertical_evasion_speed: 1.5  # m/s climb rate
+  
+  # Hysteresis (control cycles @ 100Hz)
+  critical_to_warning_cycles: 3
+  warning_to_caution_cycles: 5
+  caution_to_none_cycles: 10
+
+# ---------------------------------------------------------------------------
+# Safety Watchdog
+# ---------------------------------------------------------------------------
+safety:
+  # Timeouts (ms)
+  rc_link_timeout_ms: 500
+  motor_auto_disarm_ms: 30000
+  fpga_heartbeat_timeout_ms: 100
+  
+  # Arming
+  arming_debounce_ms: 2000  # Hold to arm
+  
+  # Altitude limits
+  max_altitude_m: 120.0     # FAA limit
+  max_vertical_speed_ms: 5.0
+  
+  # Velocity sanity
+  max_horizontal_speed_ms: 15.0
+  max_yaw_rate_rads: 6.0
+  
+  # Smoothing
+  velocity_smoothing_alpha: 0.3
+
+# ---------------------------------------------------------------------------
+# Telemetry Logging
+# ---------------------------------------------------------------------------
+telemetry:
+  # Log level: QUIET, ERROR, WARN, INFO, DEBUG, TRACE
+  log_level: "INFO"
+  
+  # Serial baud rate (for MAVLink or console telemetry)
+  serial_baud: 115200
+  
+  # Telemetry rate (Hz)
+  telemetry_rate_hz: 10  # 10 Hz update to ground station

@@ -127,6 +127,67 @@ If you find this helpful, please consider citing
 }
 ```
 
+
+---
+
+## Drone Collision Avoidance (FPGA + ARM)
+
+This repo has been extended with a **real-time drone collision avoidance system** that runs the normal flow estimator on **FPGA** with an **ARM co-processor** for flight control.
+
+### Architecture
+
+```
+Event Camera (AER) → [FPGA] → Flow Vectors → [ARM] → Motor Commands
+                    ╰─────────┬─────────╯ ╰──────┬──────╯
+                       encoder_systolic     collision_predictor
+                       spatial_hash         evasion_controller
+                       ring_buf / norm       safety_watchdog
+```
+
+### Quick Start (Software Simulation)
+
+```bash
+# 1. Convert pretrained weights (d=384 → d=128 for FPGA)
+python train/convert_weights_to_fpga.py \
+    --input models/models/UNION.pth \
+    --output models/models/FPGA.pth
+
+# 2. Run the end-to-end simulation (no hardware needed)
+python test/test_fpga_simulator.py --visualize
+```
+
+### Directory Layout
+
+| Directory | Purpose |
+|-----------|---------|
+| [`fpga/`](./fpga/) | HLS/C++ FPGA modules: AER interface, ring buffer, normalization, spatial hash k-NN, systolic encoder array, PWM output |
+| [`arm/`](./arm/) | ARM C++ controller: collision predictor (TTC & clustering), evasion controller (potential fields), safety watchdog, main control loop |
+| [`test/`](./test/) | Unit tests: Python FPGA pipeline simulator (`test_fpga_simulator.py`), ARM C++ unit tests (`test_arm_collision_predictor.cpp`), HLS C-simulation testbench (`testbench.cpp`) |
+| [`train/`](./train/) | Training configs: `fpga_training_config.py` for d=128 model, `convert_weights_to_fpga.py` |
+| [`drone/`](./drone/) | Python drone control package (for HIL testing on companion computer) |
+| [`models/`](./models/) | `FPGAParams` in `params.py`, k-NN `NormalEstimator` in `estimator.py`, `inference.py` with FPGA mode |
+
+### Key Production-Readiness Features
+
+- **Safety Watchdog** → RC link failsafe, altitude ceiling, NaN detection, motor timeout
+- **Hysteresis** → Prevents evasion-level thrashing (EMERGENCY → WARNING → NONE with hold times)
+- **Configurable** → Central `fpga/config.yaml` mirrors constants across all layers
+- **Test Coverage** → Python simulation + C++ unit tests + HLS testbench
+- **FPGA Weights Export** → `convert_weights_to_fpga.py --export-fpga-header` generates `encoder_weights.h`
+
+### Testing
+
+```bash
+# Python pipeline simulation (5 tests: looming, lateral, noise, multi, throughput)
+python test/test_fpga_simulator.py
+
+# ARM C++ unit tests
+cd arm && make test && ./test_arm_cp
+
+# HLS C-simulation (requires Vitis HLS)
+cd fpga && vitis_hls -f build.tcl
+```
+
 This project is an extension project from [VecKM](https://github.com/dhyuan99/VecKM), an ICML2024 paper.
 ```
 @InProceedings{pmlr-v235-yuan24b,

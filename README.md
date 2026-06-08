@@ -68,19 +68,21 @@ Two complementary collision avoidance pipelines run in parallel:
 
 ```bash
 # Install
-git clone https://github.com/aiyds/FPGA-Event-Based-encode
+git clone https://github.com/Enotrium/FPGA-Event-Based-encode
 cd FPGA-Event-Based-encode
-conda create -n event-flow python=3.11 && conda activate event-flow
-pip install --upgrade pip setuptools wheel
-python setup.py sdist bdist_wheel && pip install .
+make install
 
 # Convert pretrained weights (d=384 → d=128 for FPGA)
-python train/convert_weights_to_fpga.py \
-    --input models/models/UNION.pth \
-    --output models/models/FPGA.pth
+make convert
 
-# Run end-to-end simulation (no hardware needed)
+# Run all tests (no hardware needed)
+make test
+
+# Run end-to-end simulation with visualization
 python test/test_fpga_simulator.py --visualize
+
+# Run hardware-in-the-loop simulation (no physical drone needed)
+make test-hil
 
 # Run the drone demo
 cd demo && python main.py
@@ -93,13 +95,14 @@ cd demo && python main.py
 | Directory | Purpose |
 |-----------|---------|
 | [`fpga/`](./fpga/) | HLS/C++ FPGA modules: AER interface, ring buffer, normalization, spatial hash k-NN, systolic encoder array, PWM output, top-level pipeline, testbench |
-| [`arm/`](./arm/) | ARM C++ controller: collision predictor (TTC + clustering), evasion controller (potential fields + hysteresis), safety watchdog (RC failsafe, NaN guard, altitude ceiling), main control loop |
+| [`arm/`](./arm/) | ARM C++ controller: collision predictor (TTC + clustering), evasion controller (potential fields + hysteresis), safety watchdog (RC failsafe, NaN guard, altitude ceiling), Kalman filter object tracker, MAVLink v2 PX4 bridge, main control loop |
 | [`drone/`](./drone/) | Python drone control package: dual-pipeline controller, VecKM object detector, collision predictor, evasion controller, dense TTC estimator, event frame aggregator, direct CNN action predictor, contrast maximizer, monocular depth estimator |
 | [`models/`](./models/) | VecKM normal flow estimator: local geometry encoder, feature transform, inference API with ring buffer + FPGA mode, model parameters |
 | [`train/`](./train/) | Training pipeline: dataset loaders, model definition, training loop, inference, visualization, FPGA weight conversion, d=128 training config |
-| [`test/`](./test/) | Unit tests: Python FPGA pipeline simulator (5 test scenarios), ARM C++ collision prediction unit tests |
+| [`test/`](./test/) | Test suite: Python FPGA pipeline simulator (5 scenarios), ARM C++ collision prediction + evasion controller unit tests, golden model equivalence checks (FPGA ↔ Python), hardware-in-the-loop simulation (PX4 SITL/AirSim/built-in) |
 | [`demo/`](./demo/) | Demo: event data, frames, flow visualization |
 | [`egomotion/`](./egomotion/) | SVM-based egomotion estimation from normal flow + IMU |
+| [`.github/`](.github/) | CI/CD: GitHub Actions workflow (Python + ARM C++ + FPGA testbench + build verification), CODEOWNERS |
 
 ---
 
@@ -139,6 +142,26 @@ cd demo && python main.py
 - **Motor timeout**: auto-disarm after 30s of hover (zero command)
 - **Velocity smoothing**: EMA filter on all axes (α=0.3) for jerk-free flight
 - **Arming debounce**: 2s hold-to-arm prevents accidental activation
+
+---
+
+## Production Engineering
+
+This codebase has been hardened for production deployment with several key additions:
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **CI/CD** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Automated testing on every push: Python pipeline + ARM C++ unit tests + FPGA testbench + build verification |
+| **Build System** | [`Makefile`](Makefile) | Single-command interface: `make test`, `make lint`, `make build`, `make ci`, `make convert`, `make clean` |
+| **Security** | [`SECURITY.md`](SECURITY.md) | 10-attack-surface threat model, Zynq secure boot chain (RSA-4096/AES-256-GCM), MAVLink v2 signing, AXI memory protection, supply chain SBOM, adversarial robustness |
+| **Golden Model Tests** | [`test/golden_model_test.py`](test/golden_model_test.py) | FPGA ↔ Python equivalence verification: k-NN overlap, INT16 quantization error, ensemble consistency, complex arithmetic correctness, d=384→128 quality |
+| **HIL Simulation** | [`test/hil_gazebo_bridge.py`](test/hil_gazebo_bridge.py) | Hardware-in-the-loop testing with PX4 SITL + Gazebo, AirSim, or built-in physics; 100Hz closed-loop collision avoidance |
+| **Kalman Tracker** | [`arm/kalman_tracker.h`](arm/kalman_tracker.h) | 4D Kalman filter (x,y,vx,vy) with Mahalanobis-distance data association and track lifecycle management |
+| **MAVLink Bridge** | [`arm/mavlink_bridge.h`](arm/mavlink_bridge.h) | MAVLink v2 offboard velocity control for PX4/ArduPilot with heartbeat, arming, and telemetry parsing |
+| **FPGA Synthesis** | [`fpga/build.tcl`](fpga/build.tcl) | Vitis HLS synthesis script for XCZU9EG with csim/synth/cosim/export targets and full optimization directives |
+| **Onboarding** | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development setup, code style guide, PR checklist, constant-mirroring policy |
+
+See [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) for a detailed gap analysis and resolution status.
 
 ---
 

@@ -19,9 +19,7 @@
 
 #pragma once
 
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_stream.h>
+#include "hls_compat.h"
 
 // ---------------------------------------------------------------------------
 // Camera configuration
@@ -33,7 +31,10 @@
 // AER bus interface signals (parallel mode)
 struct aer_bus_t {
     ap_uint<19> address;        // Pixel address (0..640*480-1)
-    ap_uint<1>  polarity;       // ON (1) or OFF (0) event
+    ap_uint<10> x;              // Pixel x (0..639) — convenience alias
+    ap_uint<9>  y;              // Pixel y (0..479) — convenience alias
+    ap_uint<1>  pol;            // Polarity (1=ON, 0=OFF)
+    ap_uint<1>  polarity;       // ON (1) or OFF (0) event (alias for pol)
     ap_uint<1>  req;            // Request strobe (camera → FPGA)
     ap_uint<1>  ack;            // Acknowledge strobe (FPGA → camera)
 };

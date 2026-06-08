@@ -12,6 +12,7 @@
 // Clock: 100MHz PL fabric
 // Interface: AXI4-Lite for ARM control, AXI4-Stream for data
 
+#include "hls_compat.h"
 #include "ring_buffer.h"
 #include "normalization.h"
 #include "spatial_hash.h"
@@ -19,14 +20,12 @@
 #include "pwm_output.h"
 #include "aer_interface.h"
 
-#include <ap_fixed.h>
-#include <hls_stream.h>
-#include <ap_axi_sdata.h>
-
 // ---------------------------------------------------------------------------
-// AXI4-Stream data type for event flow
+// AXI4-Stream data type for event flow (synthesis only)
 // ---------------------------------------------------------------------------
+#ifndef __SIMULATION__
 typedef ap_axiu<48, 0, 0, 0> axis_event_t;
+#endif
 
 // ---------------------------------------------------------------------------
 // Top-Level Control Registers (AXI4-Lite addressable)

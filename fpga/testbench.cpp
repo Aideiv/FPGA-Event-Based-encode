@@ -22,145 +22,15 @@
 #include <random>
 
 // ---------------------------------------------------------------------------
-// HLS types needed for top-level function
-// NOTE: When running via Vitis HLS, these come from the HLS headers.
-// For standalone compilation, we define minimal equivalents.
+// Use the unified HLS compatibility layer
+// hls_compat.h provides ap_fixed, ap_uint, hls::stream, etc. for simulation
+// and includes real Vitis HLS headers when synthesizing.
 // ---------------------------------------------------------------------------
-#ifndef __SYNTHESIS__
-
-// Standalone simulation types (replicate what HLS provides)
-#include <cstdint>
-
-// Simplified ap_fixed (Q4.12 format)
-class ap_fixed_16_4 {
-public:
-    int16_t val;
-    
-    ap_fixed_16_4() : val(0) {}
-    ap_fixed_16_4(float f) {
-        // Q4.12: range [-8, 8), 2^12 = 4096
-        if (f > 7.999f) f = 7.999f;
-        if (f < -8.0f) f = -8.0f;
-        val = static_cast<int16_t>(f * 4096.0f + (f >= 0 ? 0.5f : -0.5f));
-    }
-    ap_fixed_16_4(double d) : ap_fixed_16_4(static_cast<float>(d)) {}
-    
-    operator float() const { return static_cast<float>(val) / 4096.0f; }
-    operator double() const { return static_cast<double>(val) / 4096.0; }
-    
-    ap_fixed_16_4 operator+(const ap_fixed_16_4& o) const {
-        ap_fixed_16_4 r;
-        r.val = val + o.val;
-        return r;
-    }
-    ap_fixed_16_4 operator-(const ap_fixed_16_4& o) const {
-        ap_fixed_16_4 r;
-        r.val = val - o.val;
-        return r;
-    }
-    ap_fixed_16_4 operator*(const ap_fixed_16_4& o) const {
-        int32_t prod = static_cast<int32_t>(val) * static_cast<int32_t>(o.val);
-        ap_fixed_16_4 r;
-        r.val = static_cast<int16_t>(prod >> 12);
-        return r;
-    }
-    ap_fixed_16_4 operator/(const ap_fixed_16_4& o) const {
-        if (o.val == 0) return ap_fixed_16_4(0.0f);
-        int32_t num = static_cast<int32_t>(val) << 12;
-        ap_fixed_16_4 r;
-        r.val = static_cast<int16_t>(num / o.val);
-        return r;
-    }
-    ap_fixed_16_4 operator-() const {
-        ap_fixed_16_4 r;
-        r.val = -val;
-        return r;
-    }
-    ap_fixed_16_4& operator+=(const ap_fixed_16_4& o) { val += o.val; return *this; }
-    
-    bool operator>(const ap_fixed_16_4& o) const { return val > o.val; }
-    bool operator<(const ap_fixed_16_4& o) const { return val < o.val; }
-    bool operator==(const ap_fixed_16_4& o) const { return val == o.val; }
-    
-    static ap_fixed_16_4 from_raw(int16_t raw) {
-        ap_fixed_16_4 r;
-        r.val = raw;
-        return r;
-    }
-};
-
-// Simple ap_uint for fixed-size integers
-template<int W>
-class ap_uint {
-public:
-    uint64_t val;
-    ap_uint() : val(0) {}
-    ap_uint(uint64_t v) : val(v & ((1ULL << W) - 1)) {}
-    ap_uint(int v) : val(static_cast<uint64_t>(v) & ((1ULL << W) - 1)) {}
-    ap_uint(unsigned long long v) : val(v & ((1ULL << W) - 1)) {}
-    
-    operator uint64_t() const { return val; }
-    operator int() const { return static_cast<int>(val); }
-    operator bool() const { return val != 0; }
-    
-    ap_uint operator+(const ap_uint& o) const { return ap_uint(val + o.val); }
-    ap_uint operator-(const ap_uint& o) const { return ap_uint(val - o.val); }
-    ap_uint operator*(const ap_uint& o) const { return ap_uint(val * o.val); }
-    ap_uint operator/(const ap_uint& o) const { return o.val ? ap_uint(val / o.val) : ap_uint(0); }
-    ap_uint operator&(const ap_uint& o) const { return ap_uint(val & o.val); }
-    ap_uint operator|(const ap_uint& o) const { return ap_uint(val | o.val); }
-    
-    ap_uint& operator++() { val = (val + 1) & ((1ULL << W) - 1); return *this; }
-    ap_uint& operator=(uint64_t v) { val = v & ((1ULL << W) - 1); return *this; }
-    
-    bool operator>(const ap_uint& o) const { return val > o.val; }
-    bool operator<(const ap_uint& o) const { return val < o.val; }
-    bool operator>=(const ap_uint& o) const { return val >= o.val; }
-    bool operator<=(const ap_uint& o) const { return val <= o.val; }
-    bool operator==(const ap_uint& o) const { return val == o.val; }
-    bool operator!=(const ap_uint& o) const { return val != o.val; }
-};
-
-// AXI Stream data type
-template<int W, int D, int U, int I>
-struct ap_axiu {
-    ap_uint<W> data;
-    ap_uint<D / 8> keep;
-    ap_uint<U> user;
-    ap_uint<1> last;
-    ap_uint<I> id;
-    ap_uint<D / 8> dest;
-};
-
-// Simple hls::stream
-namespace hls {
-    template<typename T>
-    class stream {
-        std::vector<T> buf;
-    public:
-        stream(const char*) {}
-        bool empty() const { return buf.empty(); }
-        void write(const T& v) { buf.push_back(v); }
-        T read() { T v = buf.back(); buf.pop_back(); return v; }
-        void read(T& v) { v = buf.back(); buf.pop_back(); }
-    };
-}
-
-// pragma simulation (no-op in testbench)
-#define PRAGMA_HLS(x)
-#define PRAGMA_RESET(x)
-
-#else
-// Real HLS synthesis
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_stream.h>
-#include <ap_axi_sdata.h>
-#endif
+#define __SIMULATION__
+#include "hls_compat.h"
 
 // ---------------------------------------------------------------------------
 // Include the FPGA modules under test
-// NOTE: For standalone compilation, these must be in the include path
 // ---------------------------------------------------------------------------
 #include "aer_interface.h"
 #include "ring_buffer.h"

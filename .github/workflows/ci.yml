@@ -62,8 +62,7 @@ jobs:
           make sim
       - name: Run ARM C++ collision predictor tests
         run: |
-          cd test
-          g++ -std=c++17 -I.. -I../arm -o test_arm_cp test_arm_collision_predictor.cpp -lpthread
+          g++ -std=c++17 -I. -I./arm -o test_arm_cp test/test_arm_collision_predictor.cpp -lpthread
           ./test_arm_cp
       - name: Build and run ARM evasion controller tests (if file exists)
         run: |

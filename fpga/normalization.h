@@ -9,8 +9,7 @@
 
 #pragma once
 
-#include <ap_fixed.h>
-#include <hls_math.h>
+#include "hls_compat.h"
 
 // ---------------------------------------------------------------------------
 // Configuration

@@ -17,7 +17,8 @@ CXX ?= arm-linux-gnueabihf-g++
 # ---------------------------------------------------------------------------
 # Compiler flags
 # ---------------------------------------------------------------------------
-CXXFLAGS_COMMON = -std=c++17 -O3 -Wall -Wextra -march=armv8-a -mcpu=cortex-a53
+CXXFLAGS_COMMON = -std=c++17 -O3 -Wall -Wextra
+ARM_ARCH_FLAGS = -march=armv8-a -mcpu=cortex-a53
 
 # Debug build
 DEBUG_FLAGS = -g -O0 -DDEBUG
@@ -25,7 +26,7 @@ DEBUG_FLAGS = -g -O0 -DDEBUG
 # Release build  
 RELEASE_FLAGS = -O3 -DNDEBUG -ffast-math -funroll-loops
 
-CXXFLAGS = $(CXXFLAGS_COMMON) $(RELEASE_FLAGS)
+CXXFLAGS = $(CXXFLAGS_COMMON) $(ARM_ARCH_FLAGS) $(RELEASE_FLAGS)
 
 # Simulation mode (no FPGA hardware needed, links fake register interface)
 SIM_FLAGS = -DSIMULATION -DFPGA_SIM
@@ -64,7 +65,7 @@ $(TARGET): $(OBJECTS)
 	@echo "Built $@ for Zynq ARM (hardware mode)"
 
 # Simulation target (no FPGA hardware needed)
-sim: CXXFLAGS += $(SIM_FLAGS)
+sim: CXXFLAGS = $(CXXFLAGS_COMMON) $(RELEASE_FLAGS) $(SIM_FLAGS)
 sim: $(TARGET_SIM)
 
 $(TARGET_SIM): $(OBJECTS)

@@ -21,6 +21,7 @@ import sys
 import math
 import time
 import numpy as np
+import torch
 from pathlib import Path
 
 # Add project root
@@ -247,11 +248,7 @@ class FPGASimulator:
         print(f"  Initializing FPGA simulator...")
         
         # Initialize the normal flow estimator using FPGA-optimized params
-        self.estimator = NormalFlowEstimator(
-            'FPGA',
-            weights_path='models/models/FPGA.pth',
-            use_gpu=False
-        )
+        self.estimator = NormalFlowEstimator('FPGA')
         
         self.evasion_calc = EvasionCommandCalculator()
         
@@ -282,7 +279,11 @@ class FPGASimulator:
         t_knn = time.perf_counter()
         
         # Forward pass through model (includes normalization + k-NN + encoding)
-        flow_pred, flow_uncert = self.estimator.estimate(events)
+        events_t = torch.from_numpy(events[:, 0]).double()
+        events_xy = torch.from_numpy(events[:, 1:3]).float()
+        flow_pred, flow_uncert = self.estimator.inference_fpga(events_t, events_xy)
+        flow_pred = flow_pred.numpy()
+        flow_uncert = flow_uncert.numpy()
         
         t_encode = time.perf_counter()
         

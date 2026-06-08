@@ -12,9 +12,7 @@
 
 #pragma once
 
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_stream.h>
+#include "hls_compat.h"
 
 // ---------------------------------------------------------------------------
 // Configuration

@@ -14,10 +14,7 @@
 
 #pragma once
 
-#include <ap_fixed.h>
-#include <ap_int.h>
-#include <hls_stream.h>
-#include <hls_math.h>
+#include "hls_compat.h"
 
 // ---------------------------------------------------------------------------
 // Configuration Constants (must match FPGAParams in models/params.py)
@@ -50,7 +47,10 @@ struct event_packed_t {
 // ---------------------------------------------------------------------------
 struct knn_output_t {
     event_idx_t neighbor_indices[K_NEIGHBORS];
-    ap_uint<6>  num_neighbors;           // Actual count (may be < K_NEIGHBORS)
+    union {
+        ap_uint<6>  num_neighbors;           // Actual count (may be < K_NEIGHBORS)
+        ap_uint<6>  count;                   // Alias for num_neighbors (testbench compat)
+    };
 };
 
 // ---------------------------------------------------------------------------

@@ -118,14 +118,14 @@ Two complementary collision avoidance pipelines run in parallel:
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              DRONE MAIN LOOP                             │
 │                                                                          │
-│  Event Camera (AER) ──────► FPGA Fabric ──────► ARM CPU ────► Motors     │
-│       │                        │                    │                    │
-│       │                     ┌───┴──────────┐   ┌───┴──────────┐        │
-│       │                     │  encoder       │   │  collision_pr│        │
-│       │                     │  spatial_hash  │   │  evasion_ctrl│        │
-│       │                     │  ring_buf      │   │  safety_wdog │        │
-│       │                     │  normalization │   │  PWM output  │        │
-│       │                     └────────────────┘   └──────────────┘        │
+│  Event Camera (AER) ──────► FPGA Fabric ──────► ARM CPU ────► Motors    │
+│       │                        │                    │                   │
+│       │                     ┌──┴─────────┐   ┌─────┴──────────┐        │
+│       │                     │  encoder       │  │  collision_pred│        │
+│       │                     │  spatial_hash  │  │  evasion_ctrl  │        │
+│       │                     │  ring_buf      │  │  safety_wdog   │        │
+│       │                     │  normalization │  │  PWM output    │        │
+│       │                     └───────────────┘   └────────────────┘        │
 │       │                                                                  │
 │       │  PIPELINE 1: Flow-Based (VecKM, ~100Hz)                          │
 │       │  ┌──────────────┐   ┌──────────────┐   ┌───────────────────┐    │

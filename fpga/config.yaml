@@ -138,6 +138,65 @@ safety:
   velocity_smoothing_alpha: 0.3
 
 # ---------------------------------------------------------------------------
+# Event Frame Aggregation (Bonazzi et al., CVPRW 2025)
+# Mirrors the SwiftEagle FPGA event frame pipeline
+# ---------------------------------------------------------------------------
+event_frame:
+  # Sensor parameters
+  sensor_width: 320
+  sensor_height: 240
+  
+  # Output frame resolution (subsampled)
+  grid_width: 80
+  grid_height: 80
+  
+  # Integration window duration (milliseconds)
+  # Paper default: 1.0 ms → 1 kHz frame rate
+  accumulation_time_ms: 1.0
+  
+  # Time between frame emissions (for rolling window mode)
+  # Defaults to accumulation_time_ms
+  integration_time_ms: 1.0
+  
+  # Mode: "fixed" (exact windows) or "rolling" (overlapping)
+  mode: "rolling"
+  
+  # Polarity handling: "sum" (pos-neg), "separate" (two channels),
+  #   "positive_only", "negative_only"
+  polarity: "sum"
+  
+  # Normalize frames to [-1, 1]
+  normalize: true
+  
+  # Number of frames in temporal stack for CNN input
+  temporal_stack_size: 5
+
+# ---------------------------------------------------------------------------
+# Direct Action Predictor (CNN pipeline, Bonazzi et al. 2025)
+# ---------------------------------------------------------------------------
+direct_action:
+  # Model architecture
+  input_channels: 5       # Temporal stack size
+  input_height: 80
+  input_width: 80
+  num_classes: 5          # STAY, LEFT, RIGHT, UP, DOWN
+  
+  # CNN convolution filters per layer
+  conv_filters: [32, 64, 128, 128]
+  
+  # Confidence threshold for issuing an action
+  confidence_threshold: 0.4
+  
+  # EMA smoothing for action probabilities
+  smoothing_alpha: 0.3
+  
+  # Model weights path
+  model_path: "models/models/dpu_action.pth"
+  
+  # ONNX export path for FPGA DPU compilation
+  onnx_export_path: "models/models/dpu_lite_net.onnx"
+
+# ---------------------------------------------------------------------------
 # Telemetry Logging
 # ---------------------------------------------------------------------------
 telemetry:

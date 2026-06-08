@@ -5,25 +5,32 @@ Event-based camera collision avoidance for drones using the VecKM normal flow es
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        DRONE MAIN LOOP                            │
-│                                                                   │
-│  Event Camera ──► DroneController.step() ──► Flight Controller    │
-│                      │                          ▲                 │
-│                      ▼                          │                 │
-│              ┌───────────────┐        ┌─────────────────┐        │
-│              │ ObjectDetector │──────►│ CollisionPredictor│       │
-│              │ (VecKM flow +  │       │ (TTC + threats)   │       │
-│              │  clustering)   │       └────────┬─────────┘        │
-│              └───────────────┘                │                   │
-│                                               ▼                   │
-│                                    ┌──────────────────┐          │
-│                                    │ EvasionController │          │
-│                                    │ (velocity setpts) │          │
-│                                    └────────┬─────────┘          │
-│                                             │                     │
-│                                    DroneCommand                   │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        DRONE MAIN LOOP                                │
+│                                                                       │
+│  Event Camera ──► DroneController.step() ──► Flight Controller        │
+│                      │          ▲                ▲                    │
+│                      │          │                │                    │
+│         ┌────────────┴──────────┴────────────────┘                    │
+│         │                                                             │
+│         │  PIPELINE 1: Flow-Based (VecKM)    PIPELINE 2: Direct CNN   │
+│         │  ┌────────────┐ ┌────────────────┐ ┌──────────────────┐    │
+│         │  │ObjectDetect │─►CollisionPredict│─►EvasionController│    │
+│         │  │(VecKM flow +│ │(TTC + threats) │ │(velocity setpts) │    │
+│         │  │ clustering) │ └───────┬────────┘ └────────┬─────────┘    │
+│         │  └────────────┘         │                    │              │
+│         │                         ▼                    ▼              │
+│         │              ┌──────────────────┐  ┌──────────────────┐    │
+│         │              │ EventFrameAgg    │─►│DirActionPredict  │    │
+│         │              │ (80×80 @ 1kHz)  │  │(DPU CNN 5-class) │    │
+│         │              └──────────────────┘  └────────┬─────────┘    │
+│         │                                              │              │
+│         │                    FUSION / ARBITRATION ◄────┘              │
+│         │                                                             │
+│         └─────────────────────────────────────────────────────────────┘
+│                                                                       │
+│                         DroneCommand                                   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Modules

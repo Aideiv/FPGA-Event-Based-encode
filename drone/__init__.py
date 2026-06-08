@@ -1,15 +1,19 @@
 """
 Drone Collision Avoidance Module for Event-Based Cameras
 
-Uses event-camera normal flow estimation to detect objects,
-predict collisions, and generate evasion maneuvers in real time.
+Two complementary pipelines for collision avoidance:
 
-SoTA-Referenced Modules:
-  - ttc_dense:   EVReflex-style dense per-event TTC (Walters & Hadfield 2021)
-                 + EV-TTC low-light handling (Bisulco et al. 2025)
-  - object_detector:   EVDodgeNet-style spatio-flow clustering (Sanket et al. 2020)
-  - collision_predictor: Looming-based TTC + Kalman tracking
-  - evasion_controller: Graded response with hysteresis
+Pipeline 1 — Flow-Based (VecKM encoder):
+    Events → ObjectDetector → CollisionPredictor → EvasionController
+    Uses normal flow for TTC estimation and graded evasion responses.
+    SoTA references: EVDodgeNet, EVReflex, EV-TTC, Falanga et al.
+
+Pipeline 2 — Direct Action (CNN, Bonazzi et al. 2025):
+    Events → EventFrameAggregator → DirectActionPredictor
+    Accumulates events into 80×80 frames, passes through DPU-optimized
+    CNN for direct 5-class evasion action. Achieves ~2.14ms latency.
+
+The DroneController can use one or both pipelines.
 """
 
 from .drone_controller import DroneController
@@ -17,6 +21,14 @@ from .object_detector import ObjectDetector
 from .collision_predictor import CollisionPredictor
 from .evasion_controller import EvasionController
 from .ttc_dense import DenseTTCEstimator, DenseTTCMap
+from .event_frame_aggregator import EventFrameAggregator, EventFrame, EventFrameTemporalStack
+from .direct_action_predictor import (
+    DirectActionPredictor,
+    DirectActionPrediction,
+    DPULightNet,
+    EvasionAction,
+    ACTION_VELOCITY,
+)
 
 __all__ = [
     "DroneController",
@@ -25,4 +37,12 @@ __all__ = [
     "EvasionController",
     "DenseTTCEstimator",
     "DenseTTCMap",
+    "EventFrameAggregator",
+    "EventFrame",
+    "EventFrameTemporalStack",
+    "DirectActionPredictor",
+    "DirectActionPrediction",
+    "DPULightNet",
+    "EvasionAction",
+    "ACTION_VELOCITY",
 ]

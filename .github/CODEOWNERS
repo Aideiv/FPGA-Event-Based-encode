@@ -1,0 +1,36 @@
+# CODEOWNERS — FPGA Event-Based Drone Collision Avoidance
+#
+# Automatically requests review from listed owners when files are changed.
+
+# Global owners (review everything)
+*       @Enotrium/core
+
+# FPGA HLS modules
+fpga/   @Enotrium/fpga
+
+# ARM C++ controller
+arm/    @Enotrium/embedded
+
+# Python drone controller
+drone/  @Enotrium/autonomy
+
+# VecKM model and training
+models/ @Enotrium/ml
+train/  @Enotrium/ml
+
+# Tests
+test/   @Enotrium/qa
+
+# CI/CD and build system
+.github/         @Enotrium/devops
+Makefile         @Enotrium/devops
+.gitignore       @Enotrium/devops
+
+# Documentation
+*.md             @Enotrium/docs
+README.md        @Enotrium/docs
+PRODUCTION_READINESS.md  @Enotrium/docs
+SECURITY.md      @Enotrium/security
+
+# Configuration
+fpga/config.yaml @Enotrium/systems @Enotrium/fpga @Enotrium/ml

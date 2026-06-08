@@ -1,14 +1,14 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="event-flow",
-    version="0.1.0",
-    author="Dehao Yuan",
-    author_email="dhyuan@umd.edu",
-    description="A point-based normal flow estimator from event camera inputs.",
+    name="fpga-event-drone",
+    version="1.0.0",
+    author="Enotrium",
+    author_email="dev@enotrium.com",
+    description="Real-time obstacle detection and evasion for drones using event cameras, normal flow estimation, and FPGA-accelerated inference.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/example/event-flow",
+    url="https://github.com/Enotrium/FPGA-Event-Based-encode",
     packages=find_packages(),
     include_package_data=True,
     package_data={"models": ["models/*.pth"]},

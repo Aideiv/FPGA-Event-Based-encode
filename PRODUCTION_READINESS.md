@@ -327,6 +327,63 @@ void pwm_output(ap_fixed<16,4> velocity_x,
 
 ---
 
+## Gap Resolution Status (Updated 2026-06-08)
+
+### ✅ Resolved
+
+| # | Gap | Severity | Resolution |
+|---|-----|----------|------------|
+| 1 | **No CI/CD pipeline** | 🔴 Critical | `.github/workflows/ci.yml` — 4 jobs (Python tests, ARM C++ tests, FPGA testbench, build verification) |
+| 2 | **No root Makefile** | 🔴 Critical | Root `Makefile` with `make test`, `make lint`, `make build`, `make ci`, `make clean`, `make install`, `make convert` |
+| 3 | **No security analysis** | 🔴 Critical | `SECURITY.md` — 10-page threat model covering camera/GPS/IMU spoofing, FPGA bitstream tampering, secure boot, MAVLink signing, supply chain, adversarial robustness |
+| 4 | **Project hygiene** | 🟠 High | `setup.py` updated (Enotrium author, correct URL, version 1.0.0); `LICENSE` copyright fixed; `CHANGELOG.md`, `CONTRIBUTING.md`, `.github/CODEOWNERS` added |
+| 5 | **No FPGA synthesis script** | 🔴 Critical | `fpga/build.tcl` — Vitis HLS synthesis script for XCZU9EG with csim/synth/cosim/export targets and full directive set |
+| 6 | **No golden model equivalence check** | 🔴 Critical | `test/golden_model_test.py` — 5 tests: config mirror consistency, k-NN equivalence (O(n²) vs O(n·k)), encoder quantization error, ensemble vs single-pass, complex arithmetic unrolling, d=384→128 quality |
+| 7 | **FPGA.pth + quantization** | 🟠 High | `train/convert_weights_to_fpga.py` extended with `--validate-only` (CI mode), `--quantize-int16` (exports `fpga/weights/encoder_weights_q4_12.h`), and full INT16 Q4.12 export pipeline |
+| 8 | **No Kalman tracking on ARM** | 🟠 High | `arm/kalman_tracker.h` — full 4D Kalman filter (x,y,vx,vy) with constant-velocity model, Mahalanobis-distance greedy data association, track lifecycle management |
+| 9 | **No MAVLink/PX4 bridge** | 🟡 Medium | `arm/mavlink_bridge.h` — MAVLink v2 bridge with heartbeat, SET_POSITION_TARGET_LOCAL_NED offboard velocity commands, arming, telemetry parsing; supports both full MAVLink library and stub compilation |
+| 10 | **No HIL simulation** | 🔴 Critical | `test/hil_gazebo_bridge.py` — 3 backends (PX4 SITL via MAVLink, AirSim, built-in 3DOF physics), simulated event camera with perspective projection, closed-loop collision avoidance testing at 100Hz |
+
+### ⚠️ Remaining (Requires Hardware)
+
+| # | Gap | Severity | Effort | Notes |
+|---|-----|----------|--------|-------|
+| 1 | **FPGA synthesis execution** | 🔴 Critical | 4-6 weeks | `build.tcl` exists but `vitis_hls` must be run on hardware with Xilinx license. Resource/latency claims still theoretical until synthesized. |
+| 2 | **d=384→128 retraining** | 🟠 High | 2-3 weeks | `FPGAParams` config exists (`train/fpga_training_config.py`). Weights can be truncated (`convert_weights_to_fpga.py`) but full accuracy requires retraining. |
+| 3 | **Real hardware testing** | 🔴 Critical | 4-8 weeks | Zynq board + event camera + drone integration pending. HIL simulation and golden model tests provide software validation in advance. |
+| 4 | **DPU compilation** | 🟡 Medium | 2-4 weeks | Bonazzi CNN pipeline has Python → ONNX path but no `vitis_ai` `.xmodel` compilation flow. |
+
+### 📁 New Files Added
+
+```
+.github/
+├── workflows/ci.yml           # CI/CD pipeline (4 jobs)
+└── CODEOWNERS                 # Code review routing
+Makefile                       # Root build system
+SECURITY.md                    # Security analysis
+CHANGELOG.md                   # Release history
+CONTRIBUTING.md                # Dev onboarding
+arm/
+├── kalman_tracker.h           # Kalman filter object tracking
+└── mavlink_bridge.h           # MAVLink v2 PX4 bridge
+fpga/
+└── build.tcl                  # Vitis HLS synthesis script
+test/
+├── golden_model_test.py       # FPGA-to-Python equivalence checks
+└── hil_gazebo_bridge.py       # HIL simulation (3 backends)
+```
+
+### Updated Readiness Assessment
+
+| Audience | Before | After |
+|----------|--------|-------|
+| **Academic (ICRA/IROS)** | ✅ Ready | ✅ Ready |
+| **VC Technical Due Diligence** | ⚠️ Show with caveats | ✅ Strong package — CI/CD, security, HIL simulation, golden model tests, MAVLink bridge demonstrate production engineering |
+| **In-Q-Tel** | ❌ Too early | ⚠️ Software foundation is production-grade. Still needs hardware synthesis + flight testing. 6-month path to deployment. |
+| **Founders Fund** | ⚠️ Maybe | ✅ Deep tech credibility greatly improved. Security analysis + HIL simulation + equivalence checking show the team understands the full stack. |
+
+---
+
 ## Summary
 
 **Three things to fix immediately (software side, no hardware needed):**

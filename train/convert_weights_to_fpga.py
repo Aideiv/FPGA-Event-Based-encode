@@ -233,13 +233,66 @@ if __name__ == '__main__':
                         help='Export weights as C header for FPGA synthesis')
     parser.add_argument('--fpga-header-dir', default='fpga/weights',
                         help='Output directory for FPGA C header')
+    parser.add_argument('--validate-only', action='store_true',
+                        help='Validate conversion without saving (CI mode)')
+    parser.add_argument('--quantize-int16', action='store_true',
+                        help='Also export INT16 quantized weights for FPGA BRAM init')
     
     args = parser.parse_args()
+    
+    if args.validate_only:
+        print("=== Validate-only mode: checking weight compatibility ===\n")
+        # Load source and verify key shapes are compatible
+        try:
+            src = torch.load(args.input, map_location='cpu', weights_only=True)
+            print(f"  ✓ {args.input} loaded ({len(src)} keys)")
+            # Check A matrix dimensions
+            if 'encoder.A' in src:
+                a_shape = src['encoder.A'].shape
+                print(f"  encoder.A: {list(a_shape)}")
+                if a_shape[1] >= 128:
+                    print("  ✓ A matrix has >=128 columns — can truncate to d=128")
+                else:
+                    print(f"  ✗ A matrix only has {a_shape[1]} columns — need d >= 128")
+                    sys.exit(1)
+            else:
+                print("  ✗ encoder.A key not found in source state_dict")
+                sys.exit(1)
+            print("  ✓ Validation passed")
+        except Exception as e:
+            print(f"  ✗ Validation failed: {e}")
+            sys.exit(1)
+        sys.exit(0)
     
     state = convert_weights(args.input, args.output)
     
     if args.export_fpga_header:
         export_weights_to_fpga_bram(state, args.fpga_header_dir)
+    
+    if args.quantize_int16:
+        print(f"\n[Extra] Exporting INT16 quantized weights...")
+        os.makedirs('fpga/weights', exist_ok=True)
+        A = state['encoder.A'].numpy()
+        with open('fpga/weights/encoder_weights_q4_12.h', 'w') as f:
+            f.write("// INT16 Q4.12 quantized encoder weights\n")
+            f.write("// Auto-generated — ready for BRAM initialization\n\n")
+            f.write("#pragma once\n")
+            f.write(f"// Dimensions: 3 × {A.shape[1]}\n")
+            f.write("#include <cstdint>\n\n")
+            f.write(f"// weight_t = int16_t Q4.12: value = raw / 4096.0f\n")
+            f.write("static const int16_t ENCODER_WEIGHTS_Q4_12[3][D_ENC] = {\n")
+            for i in range(3):
+                row_vals = []
+                for j in range(A.shape[1]):
+                    q = int(max(-32768, min(32767, round(A[i][j] * 4096))))
+                    row_vals.append(str(q))
+                f.write("    {" + ", ".join(row_vals) + "}")
+                if i < 2:
+                    f.write(",\n")
+                else:
+                    f.write("\n")
+            f.write("};\n")
+        print("  fpga/weights/encoder_weights_q4_12.h written")
     
     print("\n=== Next steps ===")
     print("1. Test inference:  python -c \"from models.inference import *; e = NormalFlowEstimator('FPGA'); print('OK')\"")

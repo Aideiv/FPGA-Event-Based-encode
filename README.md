@@ -58,6 +58,58 @@ Nature-journal-style self-contained HTML figures with SVG vector graphics, hover
 
 ---
 
+## VecKM Normal Flow API
+
+The underlying normal flow estimator can also be used standalone:
+
+```python
+from models.inference import NormalFlowEstimator
+from models.visualize import gen_flow_video
+
+estimator = NormalFlowEstimator(training_set="UNION")
+flow_predictions, flow_uncertainty = estimator.inference(events_t, undistorted_events_xy)
+flow_predictions[flow_uncertainty > 0.3] = np.nan
+
+gen_flow_video(events_t.numpy(), undistorted_events_xy.numpy(),
+               flow_predictions.numpy(), './frames', './output.mp4', fps=30)
+```
+
+| Variable | Description | Shape |
+|----------|-------------|-------|
+| `events_t` | Sorted event timestamps (seconds) | `(n,)` float64 |
+| `undistorted_events_xy` | Undistorted normalized coordinates (~[-1, 1]) | `(n, 2)` float32 |
+| `flow_predictions` | Predicted normal flow (undist. normalized px/s) | `(n, 2)` float32 |
+| `flow_uncertainty` | Prediction uncertainty | `(n,)` float32 ≥ 0 |
+
+Training sets: `"UNION"` (default, recommended), `"MVSEC"`, `"DSEC"`, `"EVIMO"`.
+
+<div align="center">
+<img src="assets/demo.gif" alt="Demo" width="100%">
+</div>
+
+### Undistorted Coordinates
+
+```python
+import cv2
+
+def get_undistorted_events_xy(raw_events_xy, K, D):
+    raw_events_xy = raw_events_xy.astype(np.float32)
+    undistorted = cv2.undistortPoints(raw_events_xy.reshape(-1, 1, 2), K, D)
+    return undistorted.reshape(-1, 2)
+```
+
+---
+
+## Egomotion Estimation
+
+SVM-based egomotion estimator using predicted normal flow and IMU. See [`./egomotion`](./egomotion).
+
+<div align="center">
+<img src="assets/egomotion.gif" alt="Egomotion" width="100%">
+</div>
+
+---
+
 ## Architecture
 
 Two complementary collision avoidance pipelines run in parallel:
@@ -223,58 +275,6 @@ All pipeline constants are defined in [`fpga/config.yaml`](./fpga/config.yaml) a
 - `arm/*.h` — ARM run-time parameters
 
 Key sections: `pipeline`, `normalization`, `camera`, `fpga`, `collision_prediction`, `evasion_controller`, `safety`, `event_frame`, `direct_action`, `telemetry`.
-
----
-
-## VecKM Normal Flow API
-
-The underlying normal flow estimator can also be used standalone:
-
-```python
-from models.inference import NormalFlowEstimator
-from models.visualize import gen_flow_video
-
-estimator = NormalFlowEstimator(training_set="UNION")
-flow_predictions, flow_uncertainty = estimator.inference(events_t, undistorted_events_xy)
-flow_predictions[flow_uncertainty > 0.3] = np.nan
-
-gen_flow_video(events_t.numpy(), undistorted_events_xy.numpy(),
-               flow_predictions.numpy(), './frames', './output.mp4', fps=30)
-```
-
-| Variable | Description | Shape |
-|----------|-------------|-------|
-| `events_t` | Sorted event timestamps (seconds) | `(n,)` float64 |
-| `undistorted_events_xy` | Undistorted normalized coordinates (~[-1, 1]) | `(n, 2)` float32 |
-| `flow_predictions` | Predicted normal flow (undist. normalized px/s) | `(n, 2)` float32 |
-| `flow_uncertainty` | Prediction uncertainty | `(n,)` float32 ≥ 0 |
-
-Training sets: `"UNION"` (default, recommended), `"MVSEC"`, `"DSEC"`, `"EVIMO"`.
-
-<div align="center">
-<img src="assets/demo.gif" alt="Demo" width="100%">
-</div>
-
-### Undistorted Coordinates
-
-```python
-import cv2
-
-def get_undistorted_events_xy(raw_events_xy, K, D):
-    raw_events_xy = raw_events_xy.astype(np.float32)
-    undistorted = cv2.undistortPoints(raw_events_xy.reshape(-1, 1, 2), K, D)
-    return undistorted.reshape(-1, 2)
-```
-
----
-
-## Egomotion Estimation
-
-SVM-based egomotion estimator using predicted normal flow and IMU. See [`./egomotion`](./egomotion).
-
-<div align="center">
-<img src="assets/egomotion.gif" alt="Egomotion" width="100%">
-</div>
 
 ---
 

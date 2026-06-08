@@ -28,13 +28,14 @@ Event-based camera collision avoidance for drones using the VecKM normal flow es
 
 ## Modules
 
-| Module | Purpose |
-|--------|---------|
-| `object_detector.py` | Detects objects from event-camera streams using normal flow clustering |
-| `collision_predictor.py` | Computes TTC, threat levels, and optimal evasion vectors |
-| `evasion_controller.py` | Translates threat assessments into graded drone flight commands |
-| `drone_controller.py` | Main integration layer combining all modules |
-| `main.py` | Entry point with demo simulation, replay, and live modes |
+| Module | Purpose | SoTA Reference |
+|--------|---------|----------------|
+| `object_detector.py` | Detects objects via spatio-flow clustering (EVDodgeNet-style DBSCAN) | [Sanket et al., ICRA 2020](https://arxiv.org/abs/1906.02919) |
+| `ttc_dense.py` | Dense per-event TTC map from flow divergence; connected-component threat extraction | [EVReflex, IROS 2021](https://arxiv.org/abs/2107.02050) + [EV-TTC, RA-L 2025](https://doi.org/10.1109/LRA.2025.3565150) |
+| `collision_predictor.py` | Looming-based TTC (Lee's τ), Kalman-filtered per-object tracking, safe-zone computation | [Falanga et al., Sci. Robot. 2020](https://robotics.sciencemag.org/content/5/40/eaaz9712) |
+| `evasion_controller.py` | Graded 5-level response with hysteresis; potential-field evasion vectors | [Sanket et al., ICRA 2020](https://arxiv.org/abs/1906.02919) |
+| `drone_controller.py` | Main integration layer combining all modules | — |
+| `main.py` | Entry point with demo simulation, replay, and live modes | — |
 
 ## Evasion Levels
 

@@ -29,6 +29,8 @@ from .direct_action_predictor import (
     EvasionAction,
     ACTION_VELOCITY,
 )
+from .contrast_maximizer import ContrastMaximizer, CMaxResult
+from .depth_estimator import DepthEstimator, DepthMap, EventDepthNet
 
 __all__ = [
     "DroneController",
@@ -45,4 +47,9 @@ __all__ = [
     "DPULightNet",
     "EvasionAction",
     "ACTION_VELOCITY",
+    "ContrastMaximizer",
+    "CMaxResult",
+    "DepthEstimator",
+    "DepthMap",
+    "EventDepthNet",
 ]

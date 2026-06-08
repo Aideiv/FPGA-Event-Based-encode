@@ -1,0 +1,605 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VecKM Normal Flow: From Event Neighborhoods to Flow Vectors</title>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --nature-blue: #1a56db;
+    --nature-dark: #222222;
+    --nature-gray: #6c757d;
+    --nature-light: #e9ecef;
+    --nature-white: #ffffff;
+    --nature-red: #d94841;
+    --nature-orange: #e67e22;
+    --nature-green: #27ae60;
+    --nature-purple: #8854d0;
+    --nature-teal: #0d9488;
+    --figure-bg: #fafbfc;
+    --border-color: #dee2e6;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+    --radius: 6px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Hind', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f6f8;
+    color: var(--nature-dark);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+.figure-container {
+    max-width: 1100px;
+    margin: 2rem auto;
+    background: var(--nature-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.figure-header {
+    padding: 1.5rem 2rem 0.75rem;
+    border-bottom: 1px solid var(--nature-light);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.figure-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--nature-blue);
+    background: #eef2ff;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+}
+
+.figure-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--nature-dark);
+    letter-spacing: -0.01em;
+}
+
+.figure-caption {
+    padding: 0.75rem 2rem;
+    font-size: 0.9rem;
+    color: var(--nature-gray);
+    line-height: 1.55;
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 2rem;
+    background: var(--figure-bg);
+    border-bottom: 1px solid var(--nature-light);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.toolbar button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--nature-white);
+    color: var(--nature-dark);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.toolbar button:hover {
+    background: #eef2ff;
+    border-color: var(--nature-blue);
+    color: var(--nature-blue);
+}
+
+.toolbar button.active {
+    background: var(--nature-blue);
+    color: white;
+    border-color: var(--nature-blue);
+}
+
+.toolbar .spacer { flex: 1; }
+
+.toolbar .zoom-display {
+    font-size: 0.8rem;
+    color: var(--nature-gray);
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5em;
+    text-align: center;
+}
+
+/* SVG Viewport */
+.svg-viewport {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--figure-bg);
+    min-height: 400px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.svg-viewport:active { cursor: grabbing; }
+.svg-viewport.panning { cursor: grabbing; }
+
+.svg-viewport svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.svg-viewport svg .clickable { cursor: pointer; }
+.svg-viewport svg .clickable:hover { opacity: 0.85; }
+
+/* Tooltip */
+.figure-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(34, 34, 34, 0.94);
+    color: #fff;
+    padding: 0.5em 0.75em;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    max-width: 300px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 100;
+    backdrop-filter: blur(6px);
+}
+
+.figure-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.figure-tooltip .tooltip-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.2em;
+}
+
+.figure-tooltip .tooltip-detail {
+    color: #adb5bd;
+    font-size: 0.75rem;
+}
+
+/* Legend */
+.legend-bar {
+    display: flex;
+    gap: 1.25rem;
+    padding: 0.75rem 2rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--nature-light);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.8rem;
+    color: var(--nature-dark);
+}
+
+.legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.legend-line {
+    width: 18px;
+    height: 2px;
+    flex-shrink: 0;
+}
+
+/* Footer */
+.figure-footer {
+    padding: 0.5rem 2rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--nature-gray);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .figure-container { margin: 1rem; border-radius: 4px; }
+    .figure-header, .figure-caption, .toolbar, .legend-bar, .figure-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .figure-title { font-size: 1rem; }
+}
+
+@media (max-width: 480px) {
+    .figure-container { margin: 0.5rem; }
+    .toolbar button { font-size: 0.7rem; padding: 0.25em 0.5em; }
+}
+</style>
+
+    </head>
+    <body>
+    <div class="figure-container">
+        <div class="figure-header">
+            <span class="figure-label">Fig. 2</span>
+            <span class="figure-title">VecKM Normal Flow: From Event Neighborhoods to Flow Vectors</span>
+        </div>
+        <div class="figure-caption">The VecKM pipeline transforms raw event data into dense normal flow fields. (1) Each event's k=32 nearest spatiotemporal neighbors are retrieved via spatial hash. (2) A vectorized kernel mixture encodes local geometry into a d=128 descriptor. (3) A 3-layer MLP regresses (vx, vy) flow vectors with per-prediction uncertainty sigma-squared. Diverging flow patterns (red cone) indicate looming objects for collision prediction.</div>
+        <div class="toolbar">
+            <button id="btn-zoom-in" title="Zoom In">🔍⁺ Zoom In</button>
+            <button id="btn-zoom-out" title="Zoom Out">🔍⁻ Zoom Out</button>
+            <button id="btn-reset" title="Reset View">↺ Reset</button>
+            <span class="spacer"></span>
+            <span class="zoom-display">100%</span>
+        </div>
+        <div class="svg-viewport">
+            <svg viewBox="0 0 1100 650" xmlns="http://www.w3.org/2000/svg" style="font-family: Hind, sans-serif;">
+<defs><marker id="arr-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6c757d"/></marker></defs>
+<rect width="1100" height="650" fill="#fafbfc" rx="6"/>
+<text x="550.0" y="35" text-anchor="middle" font-size="18" font-weight="700" fill="#222">VecKM: Vectorized Kernel Mixture for Normal Flow</text>
+<text x="95" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#6c757d">1. Event Neighborhood</text>
+<rect x="30" y="95" width="130" height="130" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="95" y="112" text-anchor="middle" font-size="10" fill="#adb5bd">Sensor Plane (640×480)</text>
+<circle cx="55" cy="130" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="80" cy="118" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="62" cy="150" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="95" cy="140" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="58" cy="170" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="105" cy="155" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="70" cy="185" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="88" cy="175" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="50" cy="160" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="110" cy="130" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="75" cy="145" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="100" cy="170" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="55" cy="195" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="120" cy="150" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="65" cy="135" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="90" cy="190" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="115" cy="170" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="45" cy="175" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="130" cy="160" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="85" cy="200" r="2.5" fill="#7c3aed" opacity="0.6"/>
+<circle cx="85" cy="160" r="5" fill="#e67e22" stroke="white" stroke-width="2"/>
+<text x="97" y="164" font-size="10" fill="#e67e22" font-weight="600">Query event eᵢ</text>
+<circle cx="85" cy="160" r="35" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4,2" opacity="0.6"/>
+<text x="115" y="118" font-size="9" fill="#2563eb">k=32 neighbors</text>
+<line x1="170" y1="160" x2="225" y2="160" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr-gray)"/>
+<text x="360" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#6c757d">2. Vectorized Kernel Mixture</text>
+<ellipse cx="280" cy="100" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="280" cy="132" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="280" cy="164" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="280" cy="196" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="280" cy="228" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="312" cy="100" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="312" cy="132" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="312" cy="164" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="312" cy="196" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="312" cy="228" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="344" cy="100" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="344" cy="132" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="344" cy="164" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="344" cy="196" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="344" cy="228" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="376" cy="100" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="376" cy="132" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="376" cy="164" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="376" cy="196" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="376" cy="228" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="408" cy="100" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="408" cy="132" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="408" cy="164" rx="14" ry="14" fill="#059669" opacity="0.15" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="408" cy="196" rx="14" ry="14" fill="#059669" opacity="0.23" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<ellipse cx="408" cy="228" rx="14" ry="14" fill="#059669" opacity="0.31" stroke="#059669" stroke-width="0.5" stroke-opacity="0.3"/>
+<text x="360" y="275" text-anchor="middle" font-size="11" fill="#6c757d" font-style="italic">κ(x, y) = Σⱼ wⱼ · exp(−γ||(x,y) − cⱼ||²)</text>
+<rect x="295" y="290" width="130" height="22" rx="3" fill="#d94841" fill-opacity="0.12" stroke="#d94841" stroke-width="1"/>
+<text x="360" y="305" text-anchor="middle" font-size="10" font-weight="600" fill="#d94841">Encoded: d=128 vector</text>
+<line x1="435" y1="160" x2="490" y2="160" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr-gray)"/>
+<text x="625" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#6c757d">3. Normal Flow Regression</text>
+<rect x="520" y="120" width="40" height="80" rx="3" fill="#d94841" fill-opacity="0.15" stroke="#d94841" stroke-width="1"/>
+<line x1="560" y1="160.0" x2="580" y2="170.0" stroke="#adb5bd" stroke-width="0.8"/>
+<rect x="580" y="140" width="30" height="60" rx="3" fill="#d94841" fill-opacity="0.15" stroke="#d94841" stroke-width="1"/>
+<line x1="610" y1="170.0" x2="635" y2="165.0" stroke="#adb5bd" stroke-width="0.8"/>
+<rect x="635" y="130" width="30" height="70" rx="3" fill="#e67e22" fill-opacity="0.15" stroke="#e67e22" stroke-width="1"/>
+<line x1="665" y1="165.0" x2="695" y2="170.0" stroke="#adb5bd" stroke-width="0.8"/>
+<rect x="695" y="145" width="25" height="50" rx="3" fill="#e67e22" fill-opacity="0.15" stroke="#e67e22" stroke-width="1"/>
+<line x1="720" y1="170.0" x2="750" y2="170.0" stroke="#adb5bd" stroke-width="0.8"/>
+<rect x="750" y="155" width="50" height="30" rx="3" fill="#e67e22" fill-opacity="0.15" stroke="#e67e22" stroke-width="1"/>
+<text x="585" y="210" text-anchor="middle" font-size="9" fill="#6c757d">3-Layer MLP</text>
+<text x="800" y="165" font-size="10" font-weight="600" fill="#e67e22">(vₓ, vᵧ)</text>
+<text x="800" y="180" font-size="9" fill="#6c757d">Normal flow</text>
+<text x="800" y="200" font-size="10" fill="#d94841">σ²</text>
+<text x="800" y="215" font-size="9" fill="#6c757d">Uncertainty</text>
+<text x="550.0" y="310" text-anchor="middle" font-size="14" font-weight="600" fill="#222">Normal Flow Field (Simulated)</text>
+<line x1="580.0" y1="460.0" x2="593.0" y2="460.0" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="593.0,460.0 594.0,457.2 596.0,459.9" fill="#e67e22" opacity="0.42"/>
+<line x1="578.977774788672" y1="467.7645713530756" x2="591.5348105304299" y2="471.12921893940836" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="591.5348105304299,471.12921893940836 593.2,468.6 594.5,471.8" fill="#e67e22" opacity="0.42"/>
+<line x1="575.9807621135332" y1="475.0" x2="587.2390923627308" y2="481.5" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="587.2390923627308,481.5 589.5,479.5 589.9,482.9" fill="#e67e22" opacity="0.42"/>
+<line x1="571.2132034355964" y1="481.2132034355964" x2="580.4055915910214" y2="490.40559159102156" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="580.4055915910214,490.40559159102156 583.1,489.1 582.6,492.4" fill="#e67e22" opacity="0.42"/>
+<line x1="565.0" y1="485.98076211353316" x2="571.5" y2="497.23909236273084" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="571.5,497.23909236273084 574.4,496.7 573.1,499.8" fill="#e67e22" opacity="0.42"/>
+<line x1="557.7645713530757" y1="488.97777478867204" x2="561.1292189394085" y2="501.5348105304299" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="561.1292189394085,501.5348105304299 564.1,501.7 562.0,504.4" fill="#e67e22" opacity="0.42"/>
+<line x1="550.0" y1="490.0" x2="550.0" y2="503.0" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="550.0,503.0 552.8,504.0 550.1,506.0" fill="#e67e22" opacity="0.42"/>
+<line x1="542.2354286469243" y1="488.97777478867204" x2="538.8707810605915" y2="501.5348105304299" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="538.8707810605915,501.5348105304299 541.4,503.2 538.2,504.5" fill="#e67e22" opacity="0.42"/>
+<line x1="535.0" y1="485.98076211353316" x2="528.5" y2="497.23909236273084" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="528.5,497.23909236273084 530.5,499.5 527.1,499.9" fill="#e67e22" opacity="0.42"/>
+<line x1="528.7867965644036" y1="481.2132034355964" x2="519.5944084089786" y2="490.40559159102156" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="519.5944084089786,490.40559159102156 520.9,493.1 517.6,492.6" fill="#e67e22" opacity="0.42"/>
+<line x1="524.0192378864668" y1="475.0" x2="512.7609076372692" y2="481.5" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="512.7609076372692,481.5 513.3,484.4 510.2,483.1" fill="#e67e22" opacity="0.42"/>
+<line x1="521.022225211328" y1="467.7645713530756" x2="508.4651894695701" y2="471.12921893940836" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="508.4651894695701,471.12921893940836 508.3,474.1 505.6,472.0" fill="#e67e22" opacity="0.42"/>
+<line x1="520.0" y1="460.0" x2="507.0" y2="460.0" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="507.0,460.0 506.0,462.8 504.0,460.1" fill="#e67e22" opacity="0.42"/>
+<line x1="521.022225211328" y1="452.2354286469244" x2="508.4651894695701" y2="448.87078106059164" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="508.4651894695701,448.87078106059164 506.8,451.4 505.5,448.2" fill="#e67e22" opacity="0.42"/>
+<line x1="524.0192378864668" y1="445.0" x2="512.7609076372692" y2="438.5" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="512.7609076372692,438.5 510.5,440.5 510.1,437.1" fill="#e67e22" opacity="0.42"/>
+<line x1="528.7867965644035" y1="438.7867965644036" x2="519.5944084089784" y2="429.59440840897844" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="519.5944084089784,429.59440840897844 516.9,430.9 517.4,427.6" fill="#e67e22" opacity="0.42"/>
+<line x1="535.0" y1="434.01923788646684" x2="528.5" y2="422.76090763726916" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="528.5,422.76090763726916 525.6,423.3 526.9,420.2" fill="#e67e22" opacity="0.42"/>
+<line x1="542.2354286469243" y1="431.02222521132796" x2="538.8707810605915" y2="418.4651894695701" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="538.8707810605915,418.4651894695701 535.9,418.3 538.0,415.6" fill="#e67e22" opacity="0.42"/>
+<line x1="550.0" y1="430.0" x2="550.0" y2="417.0" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="550.0,417.0 547.2,416.0 549.9,414.0" fill="#e67e22" opacity="0.42"/>
+<line x1="557.7645713530756" y1="431.02222521132796" x2="561.1292189394084" y2="418.4651894695701" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="561.1292189394084,418.4651894695701 558.6,416.8 561.8,415.5" fill="#e67e22" opacity="0.42"/>
+<line x1="565.0" y1="434.01923788646684" x2="571.5" y2="422.76090763726916" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="571.5,422.76090763726916 569.5,420.5 572.9,420.1" fill="#e67e22" opacity="0.42"/>
+<line x1="571.2132034355964" y1="438.7867965644036" x2="580.4055915910214" y2="429.59440840897844" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="580.4055915910214,429.59440840897844 579.1,426.9 582.4,427.4" fill="#e67e22" opacity="0.42"/>
+<line x1="575.9807621135332" y1="445.0" x2="587.2390923627308" y2="438.5" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="587.2390923627308,438.5 586.7,435.6 589.8,436.9" fill="#e67e22" opacity="0.42"/>
+<line x1="578.977774788672" y1="452.2354286469244" x2="591.5348105304299" y2="448.87078106059164" stroke="#e67e22" stroke-width="1.8" opacity="0.42"/>
+<polygon points="591.5348105304299,448.87078106059164 591.7,445.9 594.4,448.0" fill="#e67e22" opacity="0.42"/>
+<line x1="200" y1="350" x2="200.85859434521112" y2="350.26984393706636" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="200" y1="390" x2="200.88252260812183" y2="390.17650452162434" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="200" y1="430" x2="200.89671198413757" y2="430.0768610272118" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="200" y1="470" x2="200.89963287781464" y2="469.974296203491" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="200" y1="510" x2="200.89095454429506" y2="509.87272077938644" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="200" y1="550" x2="200.87164363933715" y2="549.7758630641705" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="300" y1="350" x2="300.8237835291805" y2="350.3624647528394" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="300" y1="390" x2="300.8666676177428" y2="390.24266693296795" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="300" y1="430" x2="300.8935891546382" y2="430.1072306985566" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="300" y1="470" x2="300.8992808628496" y2="469.96402876548603" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="300" y1="510" x2="300.8825226081218" y2="509.82349547837566" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="300" y1="550" x2="300.84679867068184" y2="549.6951524785545" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="400" y1="350" x2="400.72576449627013" y2="350.53222729726474" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="400" y1="390" x2="397.2814505800142" y2="388.7313436040066" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="400" y1="430" x2="397.05825797292727" y2="429.41165159458546" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="400" y1="470" x2="397.0066445264302" y2="470.1995570315713" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="400" y1="510" x2="397.1539501058485" y2="510.9486832980505" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="400" y1="550" x2="397.42752122286237" y2="551.5434872662826" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="500" y1="350" x2="498.7585911670964" y2="347.2689005676122" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="500" y1="390" x2="498.2562854188427" y2="387.5587995863798" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="500" y1="430" x2="497.42752122286237" y2="428.45651273371743" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="500" y1="470" x2="497.05825797292727" y2="470.58834840541454" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="500" y1="510" x2="497.87867965644034" y2="512.1213203435597" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="500" y1="550" x2="498.5430712064641" y2="552.6224718283646" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="600" y1="350" x2="601.2414088329035" y2="347.2689005676122" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="600" y1="390" x2="601.7437145811573" y2="387.5587995863798" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="600" y1="430" x2="602.5724787771376" y2="428.45651273371743" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="600" y1="470" x2="602.9417420270728" y2="470.58834840541454" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="600" y1="510" x2="602.1213203435597" y2="512.1213203435597" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="600" y1="550" x2="601.4569287935359" y2="552.6224718283646" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="700" y1="350" x2="699.2742355037299" y2="350.53222729726474" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="700" y1="390" x2="702.7185494199858" y2="388.7313436040066" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="700" y1="430" x2="702.9417420270728" y2="429.41165159458546" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="700" y1="470" x2="702.9933554735699" y2="470.1995570315713" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="700" y1="510" x2="702.8460498941515" y2="510.9486832980505" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="700" y1="550" x2="702.5724787771376" y2="551.5434872662826" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="800" y1="350" x2="799.1762164708196" y2="350.3624647528394" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="800" y1="390" x2="799.1333323822572" y2="390.24266693296795" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="800" y1="430" x2="799.1064108453618" y2="430.1072306985566" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="800" y1="470" x2="799.1007191371503" y2="469.96402876548603" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="800" y1="510" x2="799.1174773918782" y2="509.82349547837566" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="800" y1="550" x2="799.1532013293181" y2="549.6951524785545" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="900" y1="350" x2="899.1414056547889" y2="350.26984393706636" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="900" y1="390" x2="899.1174773918782" y2="390.17650452162434" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="900" y1="430" x2="899.1032880158624" y2="430.0768610272118" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="900" y1="470" x2="899.1003671221854" y2="469.974296203491" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="900" y1="510" x2="899.109045455705" y2="509.87272077938644" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<line x1="900" y1="550" x2="899.1283563606628" y2="549.7758630641705" stroke="#2563eb" stroke-width="1" opacity="0.25"/>
+<circle cx="550" cy="460" r="45" fill="none" stroke="#d94841" stroke-width="2" stroke-dasharray="8,3" opacity="0.7"/>
+<text x="550" y="408" text-anchor="middle" font-size="10" fill="#d94841" font-weight="600">Looming Object</text>
+<line x1="550" y1="460" x2="518" y2="580" stroke="#d94841" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+<line x1="550" y1="460" x2="582" y2="580" stroke="#d94841" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+<text x="550" y="598" text-anchor="middle" font-size="10" fill="#d94841">Collision Cone (flow divergence)</text>
+<rect x="542" y="595" width="16" height="10" rx="2" fill="#6c757d"/>
+<text x="550" y="620" text-anchor="middle" font-size="9" fill="#6c757d">Drone</text>
+<rect x="30" y="350" width="200" height="145" rx="6" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="130" y="372" text-anchor="middle" font-size="11" font-weight="600" fill="#222">Performance Metrics</text>
+<text x="42" y="394" font-size="10" fill="#6c757d">Inference Rate</text>
+<text x="220" y="394" text-anchor="end" font-size="10" font-weight="500" fill="#222">100 Hz (FPGA)</text>
+<text x="42" y="415" font-size="10" fill="#6c757d">Latency</text>
+<text x="220" y="415" text-anchor="end" font-size="10" font-weight="500" fill="#222">1.0 ms per frame</text>
+<text x="42" y="436" font-size="10" fill="#6c757d">Encoder Dim</text>
+<text x="220" y="436" text-anchor="end" font-size="10" font-weight="500" fill="#222">d = 128 (FPGA), 384 (GPU)</text>
+<text x="42" y="457" font-size="10" fill="#6c757d">Neighbors (k)</text>
+<text x="220" y="457" text-anchor="end" font-size="10" font-weight="500" fill="#222">32</text>
+<text x="42" y="478" font-size="10" fill="#6c757d">Ensemble Size</text>
+<text x="220" y="478" text-anchor="end" font-size="10" font-weight="500" fill="#222">10 members</text>
+<text x="42" y="499" font-size="10" fill="#6c757d">Uncertainty Threshold</text>
+<text x="220" y="499" text-anchor="end" font-size="10" font-weight="500" fill="#222">σ² > 0.3 → masked</text>
+</svg>
+            <div class="figure-tooltip"></div>
+        </div>
+        <div class="legend-bar"><div class="legend-item"><span class="legend-swatch" style="background:#7c3aed"></span>Event data (AER)</div><div class="legend-item"><span class="legend-swatch" style="background:#2563eb"></span>Spatial neighborhood (k-NN)</div><div class="legend-item"><span class="legend-swatch" style="background:#059669"></span>Kernel mixture basis</div><div class="legend-item"><span class="legend-swatch" style="background:#e67e22"></span>Predicted normal flow</div><div class="legend-item"><span class="legend-line" style="background:#e67e22"></span>Diverging flow (looming)</div></div>
+        <div class="figure-footer">
+            Interactive figure — Scroll to zoom, drag to pan, hover for details.
+        </div>
+    </div>
+    <script>(function() {
+    const viewport = document.querySelector('.svg-viewport');
+    const svg = viewport.querySelector('svg');
+    const tooltip = document.querySelector('.figure-tooltip');
+    const zoomDisplay = document.querySelector('.zoom-display');
+
+    let scale = 1.0;
+    let panX = 0, panY = 0;
+    let isPanning = false;
+    let startX, startY;
+    let startPanX, startPanY;
+    const MIN_SCALE = 0.3;
+    const MAX_SCALE = 5.0;
+
+    function updateTransform() {
+        svg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        svg.style.transformOrigin = '0 0';
+        zoomDisplay.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Zoom with mouse wheel
+    viewport.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 0.89;
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+    }, { passive: false });
+
+    // Pan with mouse drag
+    viewport.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.clickable') && !e.shiftKey) return;
+        isPanning = true;
+        viewport.classList.add('panning');
+        startX = e.clientX;
+        startY = e.clientY;
+        startPanX = panX;
+        startPanY = panY;
+    });
+
+    window.addEventListener('mousemove', function(e) {
+        if (!isPanning) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+    });
+
+    window.addEventListener('mouseup', function() {
+        isPanning = false;
+        viewport.classList.remove('panning');
+    });
+
+    // Toolbar buttons
+    document.getElementById('btn-zoom-in').addEventListener('click', function() {
+        scale = Math.min(MAX_SCALE, scale * 1.25);
+        updateTransform();
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', function() {
+        scale = Math.max(MIN_SCALE, scale * 0.8);
+        updateTransform();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', function() {
+        scale = 1.0;
+        panX = 0;
+        panY = 0;
+        updateTransform();
+    });
+
+    // Tooltip handling
+    const tooltipElements = svg.querySelectorAll('[data-tooltip]');
+    tooltipElements.forEach(function(el) {
+        el.addEventListener('mouseenter', function(e) {
+            const data = JSON.parse(el.getAttribute('data-tooltip'));
+            tooltip.innerHTML = '<div class="tooltip-title">' + data.title + '</div>' +
+                (data.detail ? '<div class="tooltip-detail">' + data.detail + '</div>' : '');
+            tooltip.classList.add('visible');
+        });
+        el.addEventListener('mousemove', function(e) {
+            const rect = viewport.getBoundingClientRect();
+            let tx = e.clientX - rect.left + 16;
+            let ty = e.clientY - rect.top - 10;
+            if (tx + 310 > rect.width) tx = e.clientX - rect.left - 310;
+            if (ty < 10) ty = 20;
+            tooltip.style.left = tx + 'px';
+            tooltip.style.top = ty + 'px';
+        });
+        el.addEventListener('mouseleave', function() {
+            tooltip.classList.remove('visible');
+        });
+    });
+
+    // Touch support
+    let lastTouchDist = 0;
+    viewport.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            isPanning = true;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            startPanX = panX;
+            startPanY = panY;
+        } else if (e.touches.length === 2) {
+            isPanning = false;
+            lastTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        if (e.touches.length === 1 && isPanning) {
+            panX = startPanX + (e.touches[0].clientX - startX);
+            panY = startPanY + (e.touches[0].clientY - startY);
+            updateTransform();
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (dist / lastTouchDist)));
+            const rect = viewport.getBoundingClientRect();
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            panX = mx - (mx - panX) * (newScale / scale);
+            panY = my - (my - panY) * (newScale / scale);
+            scale = newScale;
+            lastTouchDist = dist;
+            updateTransform();
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', function() { isPanning = false; });
+})();
+</script>
+    </body>
+    </html>

@@ -1,0 +1,521 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time-to-Collision Estimation and Collision Prediction</title>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --nature-blue: #1a56db;
+    --nature-dark: #222222;
+    --nature-gray: #6c757d;
+    --nature-light: #e9ecef;
+    --nature-white: #ffffff;
+    --nature-red: #d94841;
+    --nature-orange: #e67e22;
+    --nature-green: #27ae60;
+    --nature-purple: #8854d0;
+    --nature-teal: #0d9488;
+    --figure-bg: #fafbfc;
+    --border-color: #dee2e6;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+    --radius: 6px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Hind', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f6f8;
+    color: var(--nature-dark);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+.figure-container {
+    max-width: 1100px;
+    margin: 2rem auto;
+    background: var(--nature-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.figure-header {
+    padding: 1.5rem 2rem 0.75rem;
+    border-bottom: 1px solid var(--nature-light);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.figure-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--nature-blue);
+    background: #eef2ff;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+}
+
+.figure-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--nature-dark);
+    letter-spacing: -0.01em;
+}
+
+.figure-caption {
+    padding: 0.75rem 2rem;
+    font-size: 0.9rem;
+    color: var(--nature-gray);
+    line-height: 1.55;
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 2rem;
+    background: var(--figure-bg);
+    border-bottom: 1px solid var(--nature-light);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.toolbar button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--nature-white);
+    color: var(--nature-dark);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.toolbar button:hover {
+    background: #eef2ff;
+    border-color: var(--nature-blue);
+    color: var(--nature-blue);
+}
+
+.toolbar button.active {
+    background: var(--nature-blue);
+    color: white;
+    border-color: var(--nature-blue);
+}
+
+.toolbar .spacer { flex: 1; }
+
+.toolbar .zoom-display {
+    font-size: 0.8rem;
+    color: var(--nature-gray);
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5em;
+    text-align: center;
+}
+
+/* SVG Viewport */
+.svg-viewport {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--figure-bg);
+    min-height: 400px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.svg-viewport:active { cursor: grabbing; }
+.svg-viewport.panning { cursor: grabbing; }
+
+.svg-viewport svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.svg-viewport svg .clickable { cursor: pointer; }
+.svg-viewport svg .clickable:hover { opacity: 0.85; }
+
+/* Tooltip */
+.figure-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(34, 34, 34, 0.94);
+    color: #fff;
+    padding: 0.5em 0.75em;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    max-width: 300px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 100;
+    backdrop-filter: blur(6px);
+}
+
+.figure-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.figure-tooltip .tooltip-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.2em;
+}
+
+.figure-tooltip .tooltip-detail {
+    color: #adb5bd;
+    font-size: 0.75rem;
+}
+
+/* Legend */
+.legend-bar {
+    display: flex;
+    gap: 1.25rem;
+    padding: 0.75rem 2rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--nature-light);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.8rem;
+    color: var(--nature-dark);
+}
+
+.legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.legend-line {
+    width: 18px;
+    height: 2px;
+    flex-shrink: 0;
+}
+
+/* Footer */
+.figure-footer {
+    padding: 0.5rem 2rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--nature-gray);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .figure-container { margin: 1rem; border-radius: 4px; }
+    .figure-header, .figure-caption, .toolbar, .legend-bar, .figure-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .figure-title { font-size: 1rem; }
+}
+
+@media (max-width: 480px) {
+    .figure-container { margin: 0.5rem; }
+    .toolbar button { font-size: 0.7rem; padding: 0.25em 0.5em; }
+}
+</style>
+
+    </head>
+    <body>
+    <div class="figure-container">
+        <div class="figure-header">
+            <span class="figure-label">Fig. 5</span>
+            <span class="figure-title">Time-to-Collision Estimation and Collision Prediction</span>
+        </div>
+        <div class="figure-caption">Collision prediction pipeline. Lee's τ (TTC = R/Ṙ) is computed from flow divergence for looming objects. A 4D Kalman filter tracks multiple objects with Mahalanobis data association. Safe bearing sectors are computed, and graded evasion vectors are generated for all threats exceeding τ=1.0s.</div>
+        <div class="toolbar">
+            <button id="btn-zoom-in" title="Zoom In">🔍⁺ Zoom In</button>
+            <button id="btn-zoom-out" title="Zoom Out">🔍⁻ Zoom Out</button>
+            <button id="btn-reset" title="Reset View">↺ Reset</button>
+            <span class="spacer"></span>
+            <span class="zoom-display">100%</span>
+        </div>
+        <div class="svg-viewport">
+            <svg viewBox="0 0 1100 620" xmlns="http://www.w3.org/2000/svg" style="font-family: Hind, sans-serif;">
+<defs><marker id="arr-evade" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#27ae60"/></marker></defs>
+<rect width="1100" height="620" fill="#fafbfc" rx="6"/>
+<rect x="40" y="30" width="340" height="130" rx="6" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="210" y="52" text-anchor="middle" font-size="12" font-weight="600" fill="#222">Lee's τ — Time-to-Collision</text>
+<text x="210" y="85" text-anchor="middle" font-size="14" font-style="italic" fill="#d94841">τ = R / Ṙ</text>
+<text x="210" y="108" text-anchor="middle" font-size="10" fill="#6c757d">where R = object distance, Ṙ = rate of closure</text>
+<text x="210" y="130" text-anchor="middle" font-size="10" fill="#6c757d">Flow divergence ∝ 1/τ for looming objects</text>
+<text x="210" y="150" text-anchor="middle" font-size="9" fill="#adb5bd">Thresholds: τ < 1.0s → evade | τ < 0.5s → hard evade</text>
+<rect x="420" y="30" width="640" height="220" rx="6" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="740.0" y="50" text-anchor="middle" font-size="11" font-weight="600" fill="#222">TTC vs. Object Distance (various approach speeds)</text>
+<line x1="475" y1="210" x2="1040" y2="210" stroke="#222" stroke-width="1"/>
+<line x1="475" y1="70" x2="475" y2="210" stroke="#222" stroke-width="1"/>
+<text x="757.5" y="232" text-anchor="middle" font-size="9" fill="#6c757d">Distance (m)</text>
+<text x="465" y="140.0" text-anchor="middle" font-size="9" fill="#6c757d" transform="rotate(-90, 465, 140.0)">TTC (seconds)</text>
+<line x1="475.0" y1="70" x2="475.0" y2="210" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="475.0" y="222" text-anchor="middle" font-size="8" fill="#adb5bd">0</text>
+<line x1="616.25" y1="70" x2="616.25" y2="210" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="616.25" y="222" text-anchor="middle" font-size="8" fill="#adb5bd">5</text>
+<line x1="757.5" y1="70" x2="757.5" y2="210" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="757.5" y="222" text-anchor="middle" font-size="8" fill="#adb5bd">10</text>
+<line x1="898.75" y1="70" x2="898.75" y2="210" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="898.75" y="222" text-anchor="middle" font-size="8" fill="#adb5bd">15</text>
+<line x1="1040.0" y1="70" x2="1040.0" y2="210" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="1040.0" y="222" text-anchor="middle" font-size="8" fill="#adb5bd">20</text>
+<line x1="475" y1="210.0" x2="1040" y2="210.0" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="469" y="213.0" text-anchor="end" font-size="8" fill="#adb5bd">0</text>
+<line x1="475" y1="182.0" x2="1040" y2="182.0" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="469" y="185.0" text-anchor="end" font-size="8" fill="#adb5bd">1</text>
+<line x1="475" y1="154.0" x2="1040" y2="154.0" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="469" y="157.0" text-anchor="end" font-size="8" fill="#adb5bd">2</text>
+<line x1="475" y1="126.0" x2="1040" y2="126.0" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="469" y="129.0" text-anchor="end" font-size="8" fill="#adb5bd">3</text>
+<line x1="475" y1="98.0" x2="1040" y2="98.0" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="469" y="101.0" text-anchor="end" font-size="8" fill="#adb5bd">4</text>
+<line x1="475" y1="70.0" x2="1040" y2="70.0" stroke="#e9ecef" stroke-width="0.5"/>
+<text x="469" y="73.0" text-anchor="end" font-size="8" fill="#adb5bd">5</text>
+<polyline points="503.2,182.0 531.5,154.0 559.8,126.0 588.0,98.0 616.2,70.0 644.5,70.0 672.8,70.0 701.0,70.0 729.2,70.0 757.5,70.0 785.8,70.0 814.0,70.0 842.2,70.0 870.5,70.0 898.8,70.0 927.0,70.0 955.2,70.0 983.5,70.0 1011.8,70.0 1040.0,70.0" fill="none" stroke="#27ae60" stroke-width="2" class="clickable" data-tooltip='{"title": "1 m/s approach", "detail": "At 1 m/s, TTC < 1s at 1m distance"}'/>
+<polyline points="503.2,200.7 531.5,191.3 559.8,182.0 588.0,172.7 616.2,163.3 644.5,154.0 672.8,144.7 701.0,135.3 729.2,126.0 757.5,116.7 785.8,107.3 814.0,98.0 842.2,88.7 870.5,79.3 898.8,70.0 927.0,70.0 955.2,70.0 983.5,70.0 1011.8,70.0 1040.0,70.0" fill="none" stroke="#f1c40f" stroke-width="2" class="clickable" data-tooltip='{"title": "3 m/s approach", "detail": "At 3 m/s, TTC < 1s at 3m distance"}'/>
+<polyline points="503.2,204.4 531.5,198.8 559.8,193.2 588.0,187.6 616.2,182.0 644.5,176.4 672.8,170.8 701.0,165.2 729.2,159.6 757.5,154.0 785.8,148.4 814.0,142.8 842.2,137.2 870.5,131.6 898.8,126.0 927.0,120.4 955.2,114.8 983.5,109.2 1011.8,103.6 1040.0,98.0" fill="none" stroke="#e67e22" stroke-width="2" class="clickable" data-tooltip='{"title": "5 m/s approach", "detail": "At 5 m/s, TTC < 1s at 5m distance"}'/>
+<polyline points="503.2,207.2 531.5,204.4 559.8,201.6 588.0,198.8 616.2,196.0 644.5,193.2 672.8,190.4 701.0,187.6 729.2,184.8 757.5,182.0 785.8,179.2 814.0,176.4 842.2,173.6 870.5,170.8 898.8,168.0 927.0,165.2 955.2,162.4 983.5,159.6 1011.8,156.8 1040.0,154.0" fill="none" stroke="#d94841" stroke-width="2" class="clickable" data-tooltip='{"title": "10 m/s approach", "detail": "At 10 m/s, TTC < 1s at 10m distance"}'/>
+<polyline points="503.2,208.6 531.5,207.2 559.8,205.8 588.0,204.4 616.2,203.0 644.5,201.6 672.8,200.2 701.0,198.8 729.2,197.4 757.5,196.0 785.8,194.6 814.0,193.2 842.2,191.8 870.5,190.4 898.8,189.0 927.0,187.6 955.2,186.2 983.5,184.8 1011.8,183.4 1040.0,182.0" fill="none" stroke="#8e0000" stroke-width="2" class="clickable" data-tooltip='{"title": "20 m/s approach", "detail": "At 20 m/s, TTC < 1s at 20m distance"}'/>
+<line x1="475" y1="182.0" x2="1040" y2="182.0" stroke="#e67e22" stroke-width="1" stroke-dasharray="6,3"/>
+<text x="1044" y="185.0" font-size="8" fill="#e67e22">τ=1.0s</text>
+<line x1="475" y1="196.0" x2="1040" y2="196.0" stroke="#d94841" stroke-width="1" stroke-dasharray="6,3"/>
+<text x="1044" y="199.0" font-size="8" fill="#d94841">τ=0.5s</text>
+<line x1="930" y1="70" x2="950" y2="70" stroke="#27ae60" stroke-width="2"/>
+<text x="954" y="73" font-size="8" fill="#6c757d">1 m/s</text>
+<line x1="930" y1="86" x2="950" y2="86" stroke="#f1c40f" stroke-width="2"/>
+<text x="954" y="89" font-size="8" fill="#6c757d">3 m/s</text>
+<line x1="930" y1="102" x2="950" y2="102" stroke="#e67e22" stroke-width="2"/>
+<text x="954" y="105" font-size="8" fill="#6c757d">5 m/s</text>
+<line x1="930" y1="118" x2="950" y2="118" stroke="#d94841" stroke-width="2"/>
+<text x="954" y="121" font-size="8" fill="#6c757d">10 m/s</text>
+<line x1="930" y1="134" x2="950" y2="134" stroke="#8e0000" stroke-width="2"/>
+<text x="954" y="137" font-size="8" fill="#6c757d">20 m/s</text>
+<rect x="40" y="190" width="340" height="150" rx="6" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="210.0" y="210" text-anchor="middle" font-size="11" font-weight="600" fill="#222">4D Kalman Filter Tracker</text>
+<text x="50" y="232" font-size="9" font-weight="600" fill="#6c757d">State Vector</text>
+<text x="220" y="232" font-size="9" fill="#222">x = [x, y, vₓ, vᵧ]ᵀ</text>
+<text x="50" y="252" font-size="9" font-weight="600" fill="#6c757d">Process Model</text>
+<text x="220" y="252" font-size="9" fill="#222">Constant velocity</text>
+<text x="50" y="272" font-size="9" font-weight="600" fill="#6c757d">Measurement</text>
+<text x="220" y="272" font-size="9" fill="#222">Flow centroid (u, v)</text>
+<text x="50" y="292" font-size="9" font-weight="600" fill="#6c757d">Data Association</text>
+<text x="220" y="292" font-size="9" fill="#222">Mahalanobis distance</text>
+<text x="50" y="312" font-size="9" font-weight="600" fill="#6c757d">Track Lifecycle</text>
+<text x="220" y="312" font-size="9" fill="#222">Init → Confirm → Coast → Delete</text>
+<text x="420" y="285" font-size="13" font-weight="600" fill="#222">Safe Bearing Computation</text>
+<circle cx="700" cy="420" r="30" fill="#27ae60" fill-opacity="0.1" stroke="#27ae60" stroke-width="1"/>
+<text x="700" y="424" text-anchor="middle" font-size="9" font-weight="600" fill="#27ae60">Drone</text>
+<circle cx="620" cy="330" r="18" fill="#d94841" fill-opacity="0.3" stroke="#d94841" stroke-width="1.5"/>
+<text x="620" y="332" text-anchor="middle" font-size="7" fill="#d94841">Obj A
+τ=0.3s</text>
+<circle cx="800" cy="360" r="14" fill="#d94841" fill-opacity="0.3" stroke="#d94841" stroke-width="1.5"/>
+<text x="800" y="362" text-anchor="middle" font-size="7" fill="#d94841">Obj B
+τ=1.2s</text>
+<circle cx="650" cy="500" r="20" fill="#d94841" fill-opacity="0.3" stroke="#d94841" stroke-width="1.5"/>
+<text x="650" y="502" text-anchor="middle" font-size="7" fill="#d94841">Obj C
+τ=0.6s</text>
+<line x1="700" y1="420" x2="631.9585490989385" y2="343.45336773630584" stroke="#adb5bd" stroke-width="1" stroke-dasharray="4,3"/>
+<line x1="700" y1="420" x2="787.9950990400243" y2="367.2029405759854" stroke="#adb5bd" stroke-width="1" stroke-dasharray="4,3"/>
+<line x1="700" y1="420" x2="660.5999788000636" y2="483.04003391989824" stroke="#adb5bd" stroke-width="1" stroke-dasharray="4,3"/>
+<path d="M652.4,392.5 L653.9,390.0 L655.5,387.7 L657.3,385.4 L659.1,383.2 L661.1,381.1 L663.2,379.1 L665.4,377.3 L667.7,375.5 L670.0,373.9 L672.5,372.4 L675.0,371.0 L677.6,369.8 L680.3,368.7 L683.0,367.7 L685.8,366.9 L688.6,366.2 L691.4,365.7 L694.3,365.3 L697.1,365.1 L700.0,365.0 L702.9,365.1 L705.7,365.3 L708.6,365.7 L711.4,366.2 L714.2,366.9 L717.0,367.7 L719.7,368.7 L722.4,369.8 L725.0,371.0 L727.5,372.4 L730.0,373.9 L732.3,375.5 L734.6,377.3 L736.8,379.1 L738.9,381.1 L740.9,383.2 L742.7,385.4 L744.5,387.7 L746.1,390.0 L747.6,392.5" fill="none" stroke="#27ae60" stroke-width="2.5"/>
+<text x="690" y="372" font-size="9" fill="#27ae60" font-weight="600">Safe Sector</text>
+<path d="M756.9,388.5 L758.4,391.5 L759.8,394.6 L761.1,397.8 L762.2,401.0 L763.1,404.3 L763.8,407.6 L764.4,411.0 L764.8,414.3 L765.0,417.7 L765.0,421.1 L764.8,424.5 L764.5,427.9 L764.0,431.3 L763.3,434.6 L762.5,437.9 L761.5,441.2 L760.3,444.3 L758.9,447.5 L757.4,450.5" fill="none" stroke="#d94841" stroke-width="2" stroke-dasharray="4,3"/>
+<text x="770" y="365" font-size="8" fill="#d94841">Blocked</text>
+<line x1="700" y1="420" x2="610" y2="350" stroke="#27ae60" stroke-width="3" marker-end="url(#arr-evade)"/>
+<text x="605" y="345" font-size="9" font-weight="600" fill="#27ae60">Evasion</text>
+<rect x="40" y="365" width="340" height="200" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="210" y="385" text-anchor="middle" font-size="11" font-weight="600" fill="#222">Threat Summary</text>
+<text x="52" y="403" font-size="8" font-weight="600" fill="#6c757d">Object</text>
+<text x="115" y="403" font-size="8" font-weight="600" fill="#6c757d">TTC</text>
+<text x="178" y="403" font-size="8" font-weight="600" fill="#6c757d">Level</text>
+<text x="241" y="403" font-size="8" font-weight="600" fill="#6c757d">Bearing</text>
+<text x="304" y="403" font-size="8" font-weight="600" fill="#6c757d">Action</text>
+<text x="52" y="417" font-size="8" fill="#222">Object A</text>
+<text x="115" y="417" font-size="8" fill="#222">0.3s</text>
+<text x="178" y="417" font-size="8" fill="#e74c3c">CRITICAL</text>
+<text x="241" y="417" font-size="8" fill="#222">N 42°W</text>
+<text x="304" y="417" font-size="8" fill="#222">dodge right</text>
+<text x="52" y="435" font-size="8" fill="#222">Object B</text>
+<text x="115" y="435" font-size="8" fill="#222">1.2s</text>
+<text x="178" y="435" font-size="8" fill="#f1c40f">CAUTION</text>
+<text x="241" y="435" font-size="8" fill="#222">N 28°E</text>
+<text x="304" y="435" font-size="8" fill="#222">gentle left</text>
+<text x="52" y="453" font-size="8" fill="#222">Object C</text>
+<text x="115" y="453" font-size="8" fill="#222">0.6s</text>
+<text x="178" y="453" font-size="8" fill="#e67e22">WARNING</text>
+<text x="241" y="453" font-size="8" fill="#222">S 15°E</text>
+<text x="304" y="453" font-size="8" fill="#222">climb</text>
+</svg>
+            <div class="figure-tooltip"></div>
+        </div>
+        <div class="legend-bar"><div class="legend-item"><span class="legend-line" style="background:#27ae60"></span>Safe trajectory</div><div class="legend-item"><span class="legend-line" style="background:#d94841"></span>Collision threat / blocked bearing</div><div class="legend-item"><span class="legend-swatch" style="background:#d94841"></span>TTC threshold (τ < 1.0s)</div><div class="legend-item"><span class="legend-swatch" style="background:#2563eb"></span>Kalman filter tracking</div></div>
+        <div class="figure-footer">
+            Interactive figure — Scroll to zoom, drag to pan, hover for details.
+        </div>
+    </div>
+    <script>(function() {
+    const viewport = document.querySelector('.svg-viewport');
+    const svg = viewport.querySelector('svg');
+    const tooltip = document.querySelector('.figure-tooltip');
+    const zoomDisplay = document.querySelector('.zoom-display');
+
+    let scale = 1.0;
+    let panX = 0, panY = 0;
+    let isPanning = false;
+    let startX, startY;
+    let startPanX, startPanY;
+    const MIN_SCALE = 0.3;
+    const MAX_SCALE = 5.0;
+
+    function updateTransform() {
+        svg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        svg.style.transformOrigin = '0 0';
+        zoomDisplay.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Zoom with mouse wheel
+    viewport.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 0.89;
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+    }, { passive: false });
+
+    // Pan with mouse drag
+    viewport.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.clickable') && !e.shiftKey) return;
+        isPanning = true;
+        viewport.classList.add('panning');
+        startX = e.clientX;
+        startY = e.clientY;
+        startPanX = panX;
+        startPanY = panY;
+    });
+
+    window.addEventListener('mousemove', function(e) {
+        if (!isPanning) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+    });
+
+    window.addEventListener('mouseup', function() {
+        isPanning = false;
+        viewport.classList.remove('panning');
+    });
+
+    // Toolbar buttons
+    document.getElementById('btn-zoom-in').addEventListener('click', function() {
+        scale = Math.min(MAX_SCALE, scale * 1.25);
+        updateTransform();
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', function() {
+        scale = Math.max(MIN_SCALE, scale * 0.8);
+        updateTransform();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', function() {
+        scale = 1.0;
+        panX = 0;
+        panY = 0;
+        updateTransform();
+    });
+
+    // Tooltip handling
+    const tooltipElements = svg.querySelectorAll('[data-tooltip]');
+    tooltipElements.forEach(function(el) {
+        el.addEventListener('mouseenter', function(e) {
+            const data = JSON.parse(el.getAttribute('data-tooltip'));
+            tooltip.innerHTML = '<div class="tooltip-title">' + data.title + '</div>' +
+                (data.detail ? '<div class="tooltip-detail">' + data.detail + '</div>' : '');
+            tooltip.classList.add('visible');
+        });
+        el.addEventListener('mousemove', function(e) {
+            const rect = viewport.getBoundingClientRect();
+            let tx = e.clientX - rect.left + 16;
+            let ty = e.clientY - rect.top - 10;
+            if (tx + 310 > rect.width) tx = e.clientX - rect.left - 310;
+            if (ty < 10) ty = 20;
+            tooltip.style.left = tx + 'px';
+            tooltip.style.top = ty + 'px';
+        });
+        el.addEventListener('mouseleave', function() {
+            tooltip.classList.remove('visible');
+        });
+    });
+
+    // Touch support
+    let lastTouchDist = 0;
+    viewport.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            isPanning = true;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            startPanX = panX;
+            startPanY = panY;
+        } else if (e.touches.length === 2) {
+            isPanning = false;
+            lastTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        if (e.touches.length === 1 && isPanning) {
+            panX = startPanX + (e.touches[0].clientX - startX);
+            panY = startPanY + (e.touches[0].clientY - startY);
+            updateTransform();
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (dist / lastTouchDist)));
+            const rect = viewport.getBoundingClientRect();
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            panX = mx - (mx - panX) * (newScale / scale);
+            panY = my - (my - panY) * (newScale / scale);
+            scale = newScale;
+            lastTouchDist = dist;
+            updateTransform();
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', function() { isPanning = false; });
+})();
+</script>
+    </body>
+    </html>

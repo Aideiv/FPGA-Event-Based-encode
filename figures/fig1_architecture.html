@@ -1,0 +1,509 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Architecture: Dual-Pipeline Collision Avoidance</title>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --nature-blue: #1a56db;
+    --nature-dark: #222222;
+    --nature-gray: #6c757d;
+    --nature-light: #e9ecef;
+    --nature-white: #ffffff;
+    --nature-red: #d94841;
+    --nature-orange: #e67e22;
+    --nature-green: #27ae60;
+    --nature-purple: #8854d0;
+    --nature-teal: #0d9488;
+    --figure-bg: #fafbfc;
+    --border-color: #dee2e6;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+    --radius: 6px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Hind', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f6f8;
+    color: var(--nature-dark);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+.figure-container {
+    max-width: 1100px;
+    margin: 2rem auto;
+    background: var(--nature-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.figure-header {
+    padding: 1.5rem 2rem 0.75rem;
+    border-bottom: 1px solid var(--nature-light);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.figure-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--nature-blue);
+    background: #eef2ff;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+}
+
+.figure-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--nature-dark);
+    letter-spacing: -0.01em;
+}
+
+.figure-caption {
+    padding: 0.75rem 2rem;
+    font-size: 0.9rem;
+    color: var(--nature-gray);
+    line-height: 1.55;
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 2rem;
+    background: var(--figure-bg);
+    border-bottom: 1px solid var(--nature-light);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.toolbar button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--nature-white);
+    color: var(--nature-dark);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.toolbar button:hover {
+    background: #eef2ff;
+    border-color: var(--nature-blue);
+    color: var(--nature-blue);
+}
+
+.toolbar button.active {
+    background: var(--nature-blue);
+    color: white;
+    border-color: var(--nature-blue);
+}
+
+.toolbar .spacer { flex: 1; }
+
+.toolbar .zoom-display {
+    font-size: 0.8rem;
+    color: var(--nature-gray);
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5em;
+    text-align: center;
+}
+
+/* SVG Viewport */
+.svg-viewport {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--figure-bg);
+    min-height: 400px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.svg-viewport:active { cursor: grabbing; }
+.svg-viewport.panning { cursor: grabbing; }
+
+.svg-viewport svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.svg-viewport svg .clickable { cursor: pointer; }
+.svg-viewport svg .clickable:hover { opacity: 0.85; }
+
+/* Tooltip */
+.figure-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(34, 34, 34, 0.94);
+    color: #fff;
+    padding: 0.5em 0.75em;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    max-width: 300px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 100;
+    backdrop-filter: blur(6px);
+}
+
+.figure-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.figure-tooltip .tooltip-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.2em;
+}
+
+.figure-tooltip .tooltip-detail {
+    color: #adb5bd;
+    font-size: 0.75rem;
+}
+
+/* Legend */
+.legend-bar {
+    display: flex;
+    gap: 1.25rem;
+    padding: 0.75rem 2rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--nature-light);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.8rem;
+    color: var(--nature-dark);
+}
+
+.legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.legend-line {
+    width: 18px;
+    height: 2px;
+    flex-shrink: 0;
+}
+
+/* Footer */
+.figure-footer {
+    padding: 0.5rem 2rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--nature-gray);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .figure-container { margin: 1rem; border-radius: 4px; }
+    .figure-header, .figure-caption, .toolbar, .legend-bar, .figure-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .figure-title { font-size: 1rem; }
+}
+
+@media (max-width: 480px) {
+    .figure-container { margin: 0.5rem; }
+    .toolbar button { font-size: 0.7rem; padding: 0.25em 0.5em; }
+}
+</style>
+
+    </head>
+    <body>
+    <div class="figure-container">
+        <div class="figure-header">
+            <span class="figure-label">Fig. 1</span>
+            <span class="figure-title">System Architecture: Dual-Pipeline Collision Avoidance</span>
+        </div>
+        <div class="figure-caption">Complete drone collision avoidance architecture. Event camera data streams into FPGA fabric for real-time normal flow estimation (VecKM, d=128). The ARM CPU runs two parallel pipelines: (1) VecKM flow-based object detection and TTC estimation at ~100Hz, and (2) a direct CNN action predictor at ~1kHz. Outputs are fused into graded evasion velocity commands for the quadrotor motors.</div>
+        <div class="toolbar">
+            <button id="btn-zoom-in" title="Zoom In">🔍⁺ Zoom In</button>
+            <button id="btn-zoom-out" title="Zoom Out">🔍⁻ Zoom Out</button>
+            <button id="btn-reset" title="Reset View">↺ Reset</button>
+            <span class="spacer"></span>
+            <span class="zoom-display">100%</span>
+        </div>
+        <div class="svg-viewport">
+            <svg viewBox="0 0 1100 700" xmlns="http://www.w3.org/2000/svg" style="font-family: Hind, sans-serif;">
+<defs>
+<marker id="arrowhead-7c3aed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/></marker>
+<marker id="arrowhead-2563eb" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/></marker>
+<marker id="arrowhead-059669" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#059669"/></marker>
+<marker id="arrowhead-d94841" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#d94841"/></marker>
+<marker id="arrowhead-e67e22" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#e67e22"/></marker>
+<marker id="arrowhead-0d9488" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#0d9488"/></marker>
+<marker id="arrowhead-6c757d" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6c757d"/></marker>
+
+</defs>
+<rect width="1100" height="700" fill="#fafbfc" rx="6"/>
+<rect x="20" y="20" width="1060" height="660" rx="10" fill="#6c757d" fill-opacity="0.04" stroke="#6c757d" stroke-width="1" stroke-dasharray="6,3" stroke-opacity="0.4"/>
+<text x="32" y="38" font-family="Hind, sans-serif" font-size="11" font-weight="700" fill="#6c757d" letter-spacing="0.05em">DRONE MAIN LOOP</text>
+<rect x="35" y="70" width="140" height="120" rx="8" fill="#7c3aed" fill-opacity="0.12" stroke="#7c3aed" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Event Camera (Address-Event Representation)", "detail": "Prophesee Gen4 / Inivation DVXplorer\nAsynchronous per-pixel brightness changes\nMicrosecond resolution, 10M events/sec"}'/>
+<text x="105.0" y="135.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#7c3aed" class="clickable" data-tooltip='{"title": "Event Camera (Address-Event Representation)", "detail": "Prophesee Gen4 / Inivation DVXplorer\nAsynchronous per-pixel brightness changes\nMicrosecond resolution, 10M events/sec"}'>Event Camera
+(AER)</text>
+
+<line x1="189.0" y1="130.0" x2="226.0" y2="130.0" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowhead-7c3aed)"/>
+<text x="207.5" y="122.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="10" fill="#7c3aed" transform="rotate(0.0, 207.5, 130.0)">AER Bus</text>
+<rect x="240" y="50" width="280" height="600" rx="10" fill="#2563eb" fill-opacity="0.05" stroke="#2563eb" stroke-width="1" stroke-dasharray="6,3" stroke-opacity="0.4"/>
+<text x="252" y="68" font-family="Hind, sans-serif" font-size="11" font-weight="700" fill="#2563eb" letter-spacing="0.05em">FPGA FABRIC</text>
+<rect x="260" y="85" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "AER Interface", "detail": "Parallel bus receiver, event decoding, timestamp tagging\n10M events/sec sustained throughput"}'/>
+<text x="377.5" y="108.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "AER Interface", "detail": "Parallel bus receiver, event decoding, timestamp tagging\n10M events/sec sustained throughput"}'>AER Interface</text>
+
+<rect x="260" y="133" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Ring Buffer (4096 events)", "detail": "Sliding window of recent events\nConfigurable depth, zero-copy reads"}'/>
+<text x="377.5" y="156.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "Ring Buffer (4096 events)", "detail": "Sliding window of recent events\nConfigurable depth, zero-copy reads"}'>Ring Buffer</text>
+
+<rect x="260" y="181" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Spatial Hash k-NN", "detail": "Grid-based O(k) neighbor search\nk=32 neighbors, grid radius=0.15\nReplaces O(n\u00b2) brute force"}'/>
+<text x="377.5" y="204.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "Spatial Hash k-NN", "detail": "Grid-based O(k) neighbor search\nk=32 neighbors, grid radius=0.15\nReplaces O(n\u00b2) brute force"}'>Spatial Hash k-NN</text>
+
+<rect x="260" y="229" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Coordinate Normalization", "detail": "Pixel \u2192 normalized coords\nSpatial: \u00d7 pxl_radius (0.0225)\nTemporal: \u00d7 t_radius (0.01)"}'/>
+<text x="377.5" y="252.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "Coordinate Normalization", "detail": "Pixel \u2192 normalized coords\nSpatial: \u00d7 pxl_radius (0.0225)\nTemporal: \u00d7 t_radius (0.01)"}'>Normalization</text>
+
+<rect x="260" y="277" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Systolic Encoder Array", "detail": "VecKM encoder, d=128\n3-layer MLP, INT8 quantization\nPipelined systolic dataflow"}'/>
+<text x="377.5" y="300.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "Systolic Encoder Array", "detail": "VecKM encoder, d=128\n3-layer MLP, INT8 quantization\nPipelined systolic dataflow"}'>Systolic Encoder</text>
+
+<rect x="260" y="325" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Ensemble Aggregation", "detail": "Mean + variance across ensemble members\nUncertainty estimation"}'/>
+<text x="377.5" y="348.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "Ensemble Aggregation", "detail": "Mean + variance across ensemble members\nUncertainty estimation"}'>Ensemble Logic</text>
+
+<rect x="260" y="373" width="235" height="36" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "PWM Motor Output", "detail": "50Hz ESC protocol\n4-channel PWM generation"}'/>
+<text x="377.5" y="396.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#2563eb" class="clickable" data-tooltip='{"title": "PWM Motor Output", "detail": "50Hz ESC protocol\n4-channel PWM generation"}'>PWM Output</text>
+
+<line x1="534.0" y1="200.0" x2="576.0" y2="200.0" stroke="#059669" stroke-width="2" marker-end="url(#arrowhead-059669)"/>
+<text x="555.0" y="192.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="10" fill="#059669" transform="rotate(0.0, 555.0, 200.0)">Flow
+Data</text>
+<rect x="590" y="50" width="240" height="600" rx="10" fill="#059669" fill-opacity="0.05" stroke="#059669" stroke-width="1" stroke-dasharray="6,3" stroke-opacity="0.4"/>
+<text x="602" y="68" font-family="Hind, sans-serif" font-size="11" font-weight="700" fill="#059669" letter-spacing="0.05em">ARM CPU</text>
+<rect x="610" y="85" width="200" height="36" rx="8" fill="#059669" fill-opacity="0.12" stroke="#059669" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Collision Predictor (TTC)", "detail": "Looming-based TTC via Lee's \u03c4\nKalman filter object tracking\nSafe bearing computation"}'/>
+<text x="710.0" y="108.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#059669" class="clickable" data-tooltip='{"title": "Collision Predictor (TTC)", "detail": "Looming-based TTC via Lee's \u03c4\nKalman filter object tracking\nSafe bearing computation"}'>Collision Predictor</text>
+
+<rect x="610" y="133" width="200" height="36" rx="8" fill="#059669" fill-opacity="0.12" stroke="#059669" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Evasion Controller", "detail": "5-level graded response w/ hysteresis\nPotential-field vector computation\nVelocity command generation"}'/>
+<text x="710.0" y="156.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#059669" class="clickable" data-tooltip='{"title": "Evasion Controller", "detail": "5-level graded response w/ hysteresis\nPotential-field vector computation\nVelocity command generation"}'>Evasion Controller</text>
+
+<rect x="610" y="200" width="200" height="160" rx="10" fill="#e67e22" fill-opacity="0.04" stroke="#e67e22" stroke-width="1" stroke-dasharray="6,3" stroke-opacity="0.4"/>
+<text x="622" y="218" font-family="Hind, sans-serif" font-size="11" font-weight="700" fill="#e67e22" letter-spacing="0.05em">PIPELINE 1: VecKM Flow</text>
+<rect x="625" y="225" width="170" height="30" rx="8" fill="#e67e22" fill-opacity="0.12" stroke="#e67e22" stroke-width="1.5" class="clickable" data-tooltip='{"title": "VecKM Object Detector", "detail": "Normal flow + DBSCAN clustering\nFlow divergence \u2192 looming detection\n~100Hz inference rate"}'/>
+<text x="710.0" y="245.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#e67e22" class="clickable" data-tooltip='{"title": "VecKM Object Detector", "detail": "Normal flow + DBSCAN clustering\nFlow divergence \u2192 looming detection\n~100Hz inference rate"}'>Object Detector</text>
+
+<rect x="625" y="265" width="170" height="30" rx="8" fill="#e67e22" fill-opacity="0.12" stroke="#e67e22" stroke-width="1.5" class="clickable" data-tooltip='{"title": "TTC Estimator", "detail": "Lee's \u03c4 from flow divergence\nDense per-event TTC option"}'/>
+<text x="710.0" y="285.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#e67e22" class="clickable" data-tooltip='{"title": "TTC Estimator", "detail": "Lee's \u03c4 from flow divergence\nDense per-event TTC option"}'>TTC Estimator</text>
+
+<rect x="625" y="305" width="170" height="30" rx="8" fill="#e67e22" fill-opacity="0.12" stroke="#e67e22" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Evasion Planner", "detail": "Graded velocity output\nLateral + vertical + yaw"}'/>
+<text x="710.0" y="325.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#e67e22" class="clickable" data-tooltip='{"title": "Evasion Planner", "detail": "Graded velocity output\nLateral + vertical + yaw"}'>Evasion Planner</text>
+
+<rect x="610" y="380" width="200" height="160" rx="10" fill="#0d9488" fill-opacity="0.04" stroke="#0d9488" stroke-width="1" stroke-dasharray="6,3" stroke-opacity="0.4"/>
+<text x="622" y="398" font-family="Hind, sans-serif" font-size="11" font-weight="700" fill="#0d9488" letter-spacing="0.05em">PIPELINE 2: Direct CNN</text>
+<rect x="625" y="405" width="170" height="30" rx="8" fill="#0d9488" fill-opacity="0.12" stroke="#0d9488" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Event Frame Aggregator", "detail": "80\u00d780 @ 1kHz frame rate\n1ms integration windows\n5-frame temporal stack"}'/>
+<text x="710.0" y="425.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#0d9488" class="clickable" data-tooltip='{"title": "Event Frame Aggregator", "detail": "80\u00d780 @ 1kHz frame rate\n1ms integration windows\n5-frame temporal stack"}'>Event Frame Agg.</text>
+
+<rect x="625" y="445" width="170" height="30" rx="8" fill="#0d9488" fill-opacity="0.12" stroke="#0d9488" stroke-width="1.5" class="clickable" data-tooltip='{"title": "DPU-Optimized CNN", "detail": "5-class evasion (STAY/L/R/U/D)\n4 conv layers [32,64,128,128]\nDirect action prediction"}'/>
+<text x="710.0" y="465.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#0d9488" class="clickable" data-tooltip='{"title": "DPU-Optimized CNN", "detail": "5-class evasion (STAY/L/R/U/D)\n4 conv layers [32,64,128,128]\nDirect action prediction"}'>DPU CNN</text>
+
+<rect x="625" y="485" width="170" height="30" rx="8" fill="#0d9488" fill-opacity="0.12" stroke="#0d9488" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Action Probability Smoother", "detail": "EMA smoothing \u03b1=0.3\nConfidence threshold 0.4"}'/>
+<text x="710.0" y="505.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#0d9488" class="clickable" data-tooltip='{"title": "Action Probability Smoother", "detail": "EMA smoothing \u03b1=0.3\nConfidence threshold 0.4"}'>Action Smoother</text>
+
+<rect x="610" y="555" width="200" height="90" rx="10" fill="#6c757d" fill-opacity="0.04" stroke="#6c757d" stroke-width="1" stroke-dasharray="6,3" stroke-opacity="0.4"/>
+<text x="622" y="573" font-family="Hind, sans-serif" font-size="11" font-weight="700" fill="#6c757d" letter-spacing="0.05em">AUXILIARY</text>
+<rect x="625" y="573" width="80" height="28" rx="8" fill="#6c757d" fill-opacity="0.12" stroke="#6c757d" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Contrast Maximizer", "detail": "IWE-based flow refinement\nGallego et al. CVPR 2018"}'/>
+<text x="665.0" y="592.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#6c757d" class="clickable" data-tooltip='{"title": "Contrast Maximizer", "detail": "IWE-based flow refinement\nGallego et al. CVPR 2018"}'>Contrast Max</text>
+
+<rect x="712" y="573" width="80" height="28" rx="8" fill="#6c757d" fill-opacity="0.12" stroke="#6c757d" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Depth Estimator", "detail": "E2Depth monocular U-Net\nFrom event frames, 3DV 2020"}'/>
+<text x="752.0" y="592.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#6c757d" class="clickable" data-tooltip='{"title": "Depth Estimator", "detail": "E2Depth monocular U-Net\nFrom event frames, 3DV 2020"}'>Depth Est.</text>
+
+<line x1="844.0" y1="200.0" x2="896.0" y2="200.0" stroke="#d94841" stroke-width="2" marker-end="url(#arrowhead-d94841)"/>
+<text x="870.0" y="192.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="10" fill="#d94841" transform="rotate(0.0, 870.0, 200.0)">Velocity
+Commands</text>
+<rect x="910" y="70" width="140" height="120" rx="8" fill="#d94841" fill-opacity="0.12" stroke="#d94841" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Quadrotor Motors", "detail": "4 \u00d7 brushless DC motors\n50Hz PWM ESC protocol\nGraded velocity flight"}'/>
+<text x="980.0" y="135.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#d94841" class="clickable" data-tooltip='{"title": "Quadrotor Motors", "detail": "4 \u00d7 brushless DC motors\n50Hz PWM ESC protocol\nGraded velocity flight"}'>Drone
+Motors</text>
+
+<rect x="410" y="610" width="200" height="32" rx="8" fill="#d94841" fill-opacity="0.12" stroke="#d94841" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Safety Watchdog", "detail": "RC failsafe (500ms) \u2022 Alt ceiling (120m)\nNaN guard \u2022 Motor timeout (30s)\nVelocity smoothing (EMA \u03b1=0.3)"}'/>
+<text x="510.0" y="631.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="12" font-weight="600" fill="#d94841" class="clickable" data-tooltip='{"title": "Safety Watchdog", "detail": "RC failsafe (500ms) \u2022 Alt ceiling (120m)\nNaN guard \u2022 Motor timeout (30s)\nVelocity smoothing (EMA \u03b1=0.3)"}'>Safety Watchdog</text>
+
+<line x1="859.0" y1="280.0" x2="896.0" y2="280.0" stroke="#e67e22" stroke-width="2" marker-end="url(#arrowhead-e67e22)"/>
+<text x="877.5" y="272.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="10" fill="#e67e22" transform="rotate(0.0, 877.5, 280.0)">~100Hz</text>
+<line x1="859.0" y1="460.0" x2="896.0" y2="460.0" stroke="#0d9488" stroke-width="2" marker-end="url(#arrowhead-0d9488)"/>
+<text x="877.5" y="452.0" text-anchor="middle" font-family="Hind, sans-serif" font-size="10" fill="#0d9488" transform="rotate(0.0, 877.5, 460.0)">~1kHz</text>
+<text x="980" y="660" text-anchor="end" font-size="10" fill="#6c757d">100MHz system clock | Inference period: 100k cycles (1ms)</text>
+</svg>
+            <div class="figure-tooltip"></div>
+        </div>
+        <div class="legend-bar"><div class="legend-item"><span class="legend-swatch" style="background:#7c3aed"></span>Event Camera</div><div class="legend-item"><span class="legend-swatch" style="background:#2563eb"></span>FPGA Fabric</div><div class="legend-item"><span class="legend-swatch" style="background:#059669"></span>ARM CPU</div><div class="legend-item"><span class="legend-swatch" style="background:#e67e22"></span>Pipeline 1: VecKM Flow (~100Hz)</div><div class="legend-item"><span class="legend-swatch" style="background:#0d9488"></span>Pipeline 2: Direct CNN (~1kHz)</div><div class="legend-item"><span class="legend-swatch" style="background:#d94841"></span>Motor Output</div></div>
+        <div class="figure-footer">
+            Interactive figure — Scroll to zoom, drag to pan, hover for details.
+        </div>
+    </div>
+    <script>(function() {
+    const viewport = document.querySelector('.svg-viewport');
+    const svg = viewport.querySelector('svg');
+    const tooltip = document.querySelector('.figure-tooltip');
+    const zoomDisplay = document.querySelector('.zoom-display');
+
+    let scale = 1.0;
+    let panX = 0, panY = 0;
+    let isPanning = false;
+    let startX, startY;
+    let startPanX, startPanY;
+    const MIN_SCALE = 0.3;
+    const MAX_SCALE = 5.0;
+
+    function updateTransform() {
+        svg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        svg.style.transformOrigin = '0 0';
+        zoomDisplay.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Zoom with mouse wheel
+    viewport.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 0.89;
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+    }, { passive: false });
+
+    // Pan with mouse drag
+    viewport.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.clickable') && !e.shiftKey) return;
+        isPanning = true;
+        viewport.classList.add('panning');
+        startX = e.clientX;
+        startY = e.clientY;
+        startPanX = panX;
+        startPanY = panY;
+    });
+
+    window.addEventListener('mousemove', function(e) {
+        if (!isPanning) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+    });
+
+    window.addEventListener('mouseup', function() {
+        isPanning = false;
+        viewport.classList.remove('panning');
+    });
+
+    // Toolbar buttons
+    document.getElementById('btn-zoom-in').addEventListener('click', function() {
+        scale = Math.min(MAX_SCALE, scale * 1.25);
+        updateTransform();
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', function() {
+        scale = Math.max(MIN_SCALE, scale * 0.8);
+        updateTransform();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', function() {
+        scale = 1.0;
+        panX = 0;
+        panY = 0;
+        updateTransform();
+    });
+
+    // Tooltip handling
+    const tooltipElements = svg.querySelectorAll('[data-tooltip]');
+    tooltipElements.forEach(function(el) {
+        el.addEventListener('mouseenter', function(e) {
+            const data = JSON.parse(el.getAttribute('data-tooltip'));
+            tooltip.innerHTML = '<div class="tooltip-title">' + data.title + '</div>' +
+                (data.detail ? '<div class="tooltip-detail">' + data.detail + '</div>' : '');
+            tooltip.classList.add('visible');
+        });
+        el.addEventListener('mousemove', function(e) {
+            const rect = viewport.getBoundingClientRect();
+            let tx = e.clientX - rect.left + 16;
+            let ty = e.clientY - rect.top - 10;
+            if (tx + 310 > rect.width) tx = e.clientX - rect.left - 310;
+            if (ty < 10) ty = 20;
+            tooltip.style.left = tx + 'px';
+            tooltip.style.top = ty + 'px';
+        });
+        el.addEventListener('mouseleave', function() {
+            tooltip.classList.remove('visible');
+        });
+    });
+
+    // Touch support
+    let lastTouchDist = 0;
+    viewport.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            isPanning = true;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            startPanX = panX;
+            startPanY = panY;
+        } else if (e.touches.length === 2) {
+            isPanning = false;
+            lastTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        if (e.touches.length === 1 && isPanning) {
+            panX = startPanX + (e.touches[0].clientX - startX);
+            panY = startPanY + (e.touches[0].clientY - startY);
+            updateTransform();
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (dist / lastTouchDist)));
+            const rect = viewport.getBoundingClientRect();
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            panX = mx - (mx - panX) * (newScale / scale);
+            panY = my - (my - panY) * (newScale / scale);
+            scale = newScale;
+            lastTouchDist = dist;
+            updateTransform();
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', function() { isPanning = false; });
+})();
+</script>
+    </body>
+    </html>

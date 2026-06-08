@@ -1,0 +1,492 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPGA Pipeline: Stages, Timing, and Resource Utilization</title>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --nature-blue: #1a56db;
+    --nature-dark: #222222;
+    --nature-gray: #6c757d;
+    --nature-light: #e9ecef;
+    --nature-white: #ffffff;
+    --nature-red: #d94841;
+    --nature-orange: #e67e22;
+    --nature-green: #27ae60;
+    --nature-purple: #8854d0;
+    --nature-teal: #0d9488;
+    --figure-bg: #fafbfc;
+    --border-color: #dee2e6;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+    --radius: 6px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Hind', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f6f8;
+    color: var(--nature-dark);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+.figure-container {
+    max-width: 1100px;
+    margin: 2rem auto;
+    background: var(--nature-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.figure-header {
+    padding: 1.5rem 2rem 0.75rem;
+    border-bottom: 1px solid var(--nature-light);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.figure-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--nature-blue);
+    background: #eef2ff;
+    padding: 0.2em 0.6em;
+    border-radius: 3px;
+}
+
+.figure-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--nature-dark);
+    letter-spacing: -0.01em;
+}
+
+.figure-caption {
+    padding: 0.75rem 2rem;
+    font-size: 0.9rem;
+    color: var(--nature-gray);
+    line-height: 1.55;
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 2rem;
+    background: var(--figure-bg);
+    border-bottom: 1px solid var(--nature-light);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.toolbar button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--nature-white);
+    color: var(--nature-dark);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.toolbar button:hover {
+    background: #eef2ff;
+    border-color: var(--nature-blue);
+    color: var(--nature-blue);
+}
+
+.toolbar button.active {
+    background: var(--nature-blue);
+    color: white;
+    border-color: var(--nature-blue);
+}
+
+.toolbar .spacer { flex: 1; }
+
+.toolbar .zoom-display {
+    font-size: 0.8rem;
+    color: var(--nature-gray);
+    font-variant-numeric: tabular-nums;
+    min-width: 3.5em;
+    text-align: center;
+}
+
+/* SVG Viewport */
+.svg-viewport {
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--figure-bg);
+    min-height: 400px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.svg-viewport:active { cursor: grabbing; }
+.svg-viewport.panning { cursor: grabbing; }
+
+.svg-viewport svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.svg-viewport svg .clickable { cursor: pointer; }
+.svg-viewport svg .clickable:hover { opacity: 0.85; }
+
+/* Tooltip */
+.figure-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(34, 34, 34, 0.94);
+    color: #fff;
+    padding: 0.5em 0.75em;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    max-width: 300px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 100;
+    backdrop-filter: blur(6px);
+}
+
+.figure-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.figure-tooltip .tooltip-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.2em;
+}
+
+.figure-tooltip .tooltip-detail {
+    color: #adb5bd;
+    font-size: 0.75rem;
+}
+
+/* Legend */
+.legend-bar {
+    display: flex;
+    gap: 1.25rem;
+    padding: 0.75rem 2rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--nature-light);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: 0.8rem;
+    color: var(--nature-dark);
+}
+
+.legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.legend-line {
+    width: 18px;
+    height: 2px;
+    flex-shrink: 0;
+}
+
+/* Footer */
+.figure-footer {
+    padding: 0.5rem 2rem 1.25rem;
+    font-size: 0.75rem;
+    color: var(--nature-gray);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .figure-container { margin: 1rem; border-radius: 4px; }
+    .figure-header, .figure-caption, .toolbar, .legend-bar, .figure-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .figure-title { font-size: 1rem; }
+}
+
+@media (max-width: 480px) {
+    .figure-container { margin: 0.5rem; }
+    .toolbar button { font-size: 0.7rem; padding: 0.25em 0.5em; }
+}
+</style>
+
+    </head>
+    <body>
+    <div class="figure-container">
+        <div class="figure-header">
+            <span class="figure-label">Fig. 4</span>
+            <span class="figure-title">FPGA Pipeline: Stages, Timing, and Resource Utilization</span>
+        </div>
+        <div class="figure-caption">Complete FPGA pipeline for real-time normal flow inference. Total end-to-end latency is 297.0 μs (29700 clock cycles at 100MHz), enabling sustained 1kHz inference. The systolic encoder array uses 8 processing elements × 16-wide SIMD for INT8 vectorized kernel mixture computation. Resource utilization shown for Xilinx Zynq UltraScale+ XCZU9EG.</div>
+        <div class="toolbar">
+            <button id="btn-zoom-in" title="Zoom In">🔍⁺ Zoom In</button>
+            <button id="btn-zoom-out" title="Zoom Out">🔍⁻ Zoom Out</button>
+            <button id="btn-reset" title="Reset View">↺ Reset</button>
+            <span class="spacer"></span>
+            <span class="zoom-display">100%</span>
+        </div>
+        <div class="svg-viewport">
+            <svg viewBox="0 0 1100 600" xmlns="http://www.w3.org/2000/svg" style="font-family: Hind, sans-serif;">
+<defs><marker id="arr-df" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6c757d"/></marker></defs>
+<rect width="1100" height="600" fill="#fafbfc" rx="6"/>
+<rect x="55" y="70" width="15.993265993265993" height="80" rx="6" fill="#7c3aed" fill-opacity="0.15" stroke="#7c3aed" stroke-width="1.5" class="clickable" data-tooltip='{"title": "AER Receive", "detail": "Duration: 5.0 \u03bcs"}'/>
+<text x="62.996632996633" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#7c3aed">AER</text>
+<text x="62.996632996633" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#7c3aed">Receive</text>
+<text x="62.996632996633" y="166" text-anchor="middle" font-size="9" fill="#6c757d">5.0 μs</text>
+<rect x="70.993265993266" y="70" width="9.595959595959597" height="80" rx="6" fill="#2563eb" fill-opacity="0.15" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Ring Buffer Write", "detail": "Duration: 3.0 \u03bcs"}'/>
+<text x="75.79124579124579" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Ring Buffer</text>
+<text x="75.79124579124579" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Write</text>
+<text x="75.79124579124579" y="166" text-anchor="middle" font-size="9" fill="#6c757d">3.0 μs</text>
+<rect x="80.58922558922559" y="70" width="143.93939393939394" height="80" rx="6" fill="#2563eb" fill-opacity="0.15" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Spatial Hash k-NN", "detail": "Duration: 45.0 \u03bcs"}'/>
+<text x="152.55892255892257" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Spatial</text>
+<text x="152.55892255892257" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Hash k-NN</text>
+<text x="152.55892255892257" y="166" text-anchor="middle" font-size="9" fill="#6c757d">45.0 μs</text>
+<rect x="224.52861952861952" y="70" width="25.589225589225588" height="80" rx="6" fill="#2563eb" fill-opacity="0.15" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Coordinate Normalize", "detail": "Duration: 8.0 \u03bcs"}'/>
+<text x="237.3232323232323" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Coordinate</text>
+<text x="237.3232323232323" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Normalize</text>
+<text x="237.3232323232323" y="166" text-anchor="middle" font-size="9" fill="#6c757d">8.0 μs</text>
+<rect x="250.1178451178451" y="70" width="383.83838383838383" height="80" rx="6" fill="#2563eb" fill-opacity="0.15" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Systolic Encoder", "detail": "Duration: 120.0 \u03bcs"}'/>
+<text x="442.037037037037" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Systolic</text>
+<text x="442.037037037037" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Encoder</text>
+<text x="442.037037037037" y="166" text-anchor="middle" font-size="9" fill="#6c757d">120.0 μs</text>
+<rect x="633.9562289562289" y="70" width="57.57575757575757" height="80" rx="6" fill="#2563eb" fill-opacity="0.15" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Ensemble Aggregate", "detail": "Duration: 18.0 \u03bcs"}'/>
+<text x="662.7441077441076" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Ensemble</text>
+<text x="662.7441077441076" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Aggregate</text>
+<text x="662.7441077441076" y="166" text-anchor="middle" font-size="9" fill="#6c757d">18.0 μs</text>
+<rect x="691.5319865319865" y="70" width="9.595959595959597" height="80" rx="6" fill="#2563eb" fill-opacity="0.15" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Flow Output", "detail": "Duration: 3.0 \u03bcs"}'/>
+<text x="696.3299663299663" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Flow</text>
+<text x="696.3299663299663" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Output</text>
+<text x="696.3299663299663" y="166" text-anchor="middle" font-size="9" fill="#6c757d">3.0 μs</text>
+<rect x="701.1279461279461" y="70" width="303.87205387205387" height="80" rx="6" fill="#059669" fill-opacity="0.15" stroke="#059669" stroke-width="1.5" class="clickable" data-tooltip='{"title": "ARM Predict", "detail": "Duration: 95.0 \u03bcs"}'/>
+<text x="853.063973063973" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#059669">ARM</text>
+<text x="853.063973063973" y="116" text-anchor="middle" font-size="10" font-weight="600" fill="#059669">Predict</text>
+<text x="853.063973063973" y="166" text-anchor="middle" font-size="9" fill="#6c757d">95.0 μs</text>
+<text x="1015" y="110.0" font-size="10" font-weight="600" fill="#d94841">Total: 297.0 μs</text>
+<text x="55" y="45" font-size="12" font-weight="600" fill="#222">FPGA Pipeline Stages (100MHz, 29700 cycles total)</text>
+<text x="55" y="260" font-size="13" font-weight="600" fill="#222">Resource Utilization (XCZU9EG)</text>
+<text x="55" y="294" font-size="10" fill="#222">DSP Slices</text>
+<rect x="175" y="288" width="80.0" height="18" rx="3" fill="#2563eb" fill-opacity="0.7" class="clickable" data-tooltip='{"title": "DSP Slices", "detail": "Used: 720 / 2,520 (28.6%)"}'/>
+<text x="263.0" y="301" font-size="9" fill="#6c757d">720 / 2,520 (28.6%)</text>
+<text x="55" y="336" font-size="10" fill="#222">BRAM (36Kb)</text>
+<rect x="175" y="330" width="126.49122807017544" height="18" rx="3" fill="#7c3aed" fill-opacity="0.7" class="clickable" data-tooltip='{"title": "BRAM (36Kb)", "detail": "Used: 412 / 912 (45.2%)"}'/>
+<text x="309.49122807017545" y="343" font-size="9" fill="#6c757d">412 / 912 (45.2%)</text>
+<text x="55" y="378" font-size="10" fill="#222">LUTs</text>
+<rect x="175" y="372" width="90.94890510948905" height="18" rx="3" fill="#059669" fill-opacity="0.7" class="clickable" data-tooltip='{"title": "LUTs", "detail": "Used: 89,000 / 274,000 (32.5%)"}'/>
+<text x="273.94890510948903" y="385" font-size="9" fill="#6c757d">89,000 / 274,000 (32.5%)</text>
+<text x="55" y="420" font-size="10" fill="#222">Flip-Flops</text>
+<rect x="175" y="414" width="89.41605839416059" height="18" rx="3" fill="#e67e22" fill-opacity="0.7" class="clickable" data-tooltip='{"title": "Flip-Flops", "detail": "Used: 175,000 / 548,000 (31.9%)"}'/>
+<text x="272.4160583941606" y="427" font-size="9" fill="#6c757d">175,000 / 548,000 (31.9%)</text>
+<text x="500" y="260" font-size="13" font-weight="600" fill="#222">Dataflow Architecture</text>
+<rect x="500" y="290" width="110" height="55" rx="8" fill="#7c3aed" fill-opacity="0.12" stroke="#7c3aed" stroke-width="1.5" class="clickable" data-tooltip='{"title": "AER Bus", "detail": "10M evt/s"}'/>
+<text x="555.0" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#7c3aed">AER Bus</text>
+<text x="555.0" y="328" text-anchor="middle" font-size="10" font-weight="600" fill="#7c3aed">10M evt/s</text>
+<line x1="610" y1="317.5" x2="640" y2="317.5" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr-df)"/>
+<rect x="640" y="290" width="110" height="55" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Ring Buffer", "detail": "4096 events"}'/>
+<text x="695.0" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Ring Buffer</text>
+<text x="695.0" y="328" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">4096 events</text>
+<line x1="750" y1="317.5" x2="780" y2="317.5" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr-df)"/>
+<rect x="780" y="290" width="110" height="55" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Spatial Hash", "detail": "Grid 0.15"}'/>
+<text x="835.0" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Spatial Hash</text>
+<text x="835.0" y="328" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Grid 0.15</text>
+<line x1="890" y1="317.5" x2="920" y2="317.5" stroke="#6c757d" stroke-width="1.5" marker-end="url(#arr-df)"/>
+<rect x="920" y="290" width="110" height="55" rx="8" fill="#2563eb" fill-opacity="0.12" stroke="#2563eb" stroke-width="1.5" class="clickable" data-tooltip='{"title": "Systolic Array", "detail": "8 PEs \u00d7 16"}'/>
+<text x="975.0" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">Systolic Array</text>
+<text x="975.0" y="328" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">8 PEs × 16</text>
+<rect x="500" y="390" width="540" height="115" rx="4" fill="white" stroke="#dee2e6" stroke-width="1"/>
+<text x="770" y="412" text-anchor="middle" font-size="11" font-weight="600" fill="#222">Throughput Analysis</text>
+<text x="512" y="430" font-size="10" fill="#6c757d">Event Input Rate</text>
+<text x="720" y="430" font-size="10" font-weight="600" fill="#222">10M events/sec</text>
+<text x="900" y="430" font-size="10" fill="#adb5bd">Sustained AER parallel bus</text>
+<text x="512" y="448" font-size="10" fill="#6c757d">k-NN Throughput</text>
+<text x="720" y="448" font-size="10" font-weight="600" fill="#222">4.1M neighbors/sec</text>
+<text x="900" y="448" font-size="10" fill="#adb5bd">Spatial hash O(k) lookup</text>
+<text x="512" y="466" font-size="10" fill="#6c757d">Encoder Throughput</text>
+<text x="720" y="466" font-size="10" font-weight="600" fill="#222">1.0M events/sec</text>
+<text x="900" y="466" font-size="10" fill="#adb5bd">Systolic array, d=128, INT8</text>
+<text x="512" y="484" font-size="10" fill="#6c757d">End-to-End Latency</text>
+<text x="720" y="484" font-size="10" font-weight="600" fill="#222">297.0 μs</text>
+<text x="900" y="484" font-size="10" fill="#adb5bd">29700 cycles @ 100MHz</text>
+<text x="55" y="545" font-size="10" fill="#6c757d">⏱ Clock domains: AER (100MHz) → Pipeline (100MHz) → PWM (50Hz) → ARM (100Hz control loop)</text>
+<text x="55" y="565" font-size="10" fill="#adb5bd">🔒 Memory: Ring buffer (BRAM, 3-cycle read) | Weights: DDR4 (AXI4-Stream, 32-bit) | Quantization: INT8 activations, INT8 weights</text>
+</svg>
+            <div class="figure-tooltip"></div>
+        </div>
+        <div class="legend-bar"><div class="legend-item"><span class="legend-swatch" style="background:#7c3aed"></span>AER Interface</div><div class="legend-item"><span class="legend-swatch" style="background:#2563eb"></span>FPGA Pipeline Stage</div><div class="legend-item"><span class="legend-swatch" style="background:#059669"></span>ARM CPU</div><div class="legend-item"><span class="legend-swatch" style="background:#e67e22"></span>Resource Utilization</div></div>
+        <div class="figure-footer">
+            Interactive figure — Scroll to zoom, drag to pan, hover for details.
+        </div>
+    </div>
+    <script>(function() {
+    const viewport = document.querySelector('.svg-viewport');
+    const svg = viewport.querySelector('svg');
+    const tooltip = document.querySelector('.figure-tooltip');
+    const zoomDisplay = document.querySelector('.zoom-display');
+
+    let scale = 1.0;
+    let panX = 0, panY = 0;
+    let isPanning = false;
+    let startX, startY;
+    let startPanX, startPanY;
+    const MIN_SCALE = 0.3;
+    const MAX_SCALE = 5.0;
+
+    function updateTransform() {
+        svg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        svg.style.transformOrigin = '0 0';
+        zoomDisplay.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Zoom with mouse wheel
+    viewport.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 0.89;
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+    }, { passive: false });
+
+    // Pan with mouse drag
+    viewport.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.clickable') && !e.shiftKey) return;
+        isPanning = true;
+        viewport.classList.add('panning');
+        startX = e.clientX;
+        startY = e.clientY;
+        startPanX = panX;
+        startPanY = panY;
+    });
+
+    window.addEventListener('mousemove', function(e) {
+        if (!isPanning) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+    });
+
+    window.addEventListener('mouseup', function() {
+        isPanning = false;
+        viewport.classList.remove('panning');
+    });
+
+    // Toolbar buttons
+    document.getElementById('btn-zoom-in').addEventListener('click', function() {
+        scale = Math.min(MAX_SCALE, scale * 1.25);
+        updateTransform();
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', function() {
+        scale = Math.max(MIN_SCALE, scale * 0.8);
+        updateTransform();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', function() {
+        scale = 1.0;
+        panX = 0;
+        panY = 0;
+        updateTransform();
+    });
+
+    // Tooltip handling
+    const tooltipElements = svg.querySelectorAll('[data-tooltip]');
+    tooltipElements.forEach(function(el) {
+        el.addEventListener('mouseenter', function(e) {
+            const data = JSON.parse(el.getAttribute('data-tooltip'));
+            tooltip.innerHTML = '<div class="tooltip-title">' + data.title + '</div>' +
+                (data.detail ? '<div class="tooltip-detail">' + data.detail + '</div>' : '');
+            tooltip.classList.add('visible');
+        });
+        el.addEventListener('mousemove', function(e) {
+            const rect = viewport.getBoundingClientRect();
+            let tx = e.clientX - rect.left + 16;
+            let ty = e.clientY - rect.top - 10;
+            if (tx + 310 > rect.width) tx = e.clientX - rect.left - 310;
+            if (ty < 10) ty = 20;
+            tooltip.style.left = tx + 'px';
+            tooltip.style.top = ty + 'px';
+        });
+        el.addEventListener('mouseleave', function() {
+            tooltip.classList.remove('visible');
+        });
+    });
+
+    // Touch support
+    let lastTouchDist = 0;
+    viewport.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+            isPanning = true;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            startPanX = panX;
+            startPanY = panY;
+        } else if (e.touches.length === 2) {
+            isPanning = false;
+            lastTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+        if (e.touches.length === 1 && isPanning) {
+            panX = startPanX + (e.touches[0].clientX - startX);
+            panY = startPanY + (e.touches[0].clientY - startY);
+            updateTransform();
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * (dist / lastTouchDist)));
+            const rect = viewport.getBoundingClientRect();
+            const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            panX = mx - (mx - panX) * (newScale / scale);
+            panY = my - (my - panY) * (newScale / scale);
+            scale = newScale;
+            lastTouchDist = dist;
+            updateTransform();
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', function() { isPanning = false; });
+})();
+</script>
+    </body>
+    </html>

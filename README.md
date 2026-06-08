@@ -21,6 +21,10 @@ Event cameras capture per-pixel brightness changes asynchronously at microsecond
 <img src="assets/normal_flow.png">
 </div>
 
+<div align="center">
+<img src="assets/demo.gif" alt="Demo" width="100%">
+</div>
+
 ---
 
 ## Interactive Figures 🖱️
@@ -82,10 +86,6 @@ gen_flow_video(events_t.numpy(), undistorted_events_xy.numpy(),
 | `flow_uncertainty` | Prediction uncertainty | `(n,)` float32 ≥ 0 |
 
 Training sets: `"UNION"` (default, recommended), `"MVSEC"`, `"DSEC"`, `"EVIMO"`.
-
-<div align="center">
-<img src="assets/demo.gif" alt="Demo" width="100%">
-</div>
 
 ### Undistorted Coordinates
 

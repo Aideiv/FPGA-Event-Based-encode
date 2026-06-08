@@ -53,6 +53,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
       - name: Build ARM C++ tests
         run: |
           cd arm
@@ -62,11 +65,15 @@ jobs:
           cd test
           g++ -std=c++17 -I.. -I../arm -o test_arm_cp test_arm_collision_predictor.cpp -lpthread
           ./test_arm_cp
-      - name: Build and run ARM evasion controller tests
+      - name: Build and run ARM evasion controller tests (if file exists)
         run: |
-          cd test
-          g++ -std=c++17 -I.. -I../arm -o test_arm_evasion test_arm_evasion_controller.cpp -lpthread
-          ./test_arm_evasion || echo "Evasion test file may not exist yet — this is expected if adding for first time"
+          if [ -f test/test_arm_evasion_controller.cpp ]; then
+            cd test
+            g++ -std=c++17 -I.. -I../arm -o test_arm_evasion test_arm_evasion_controller.cpp -lpthread
+            ./test_arm_evasion
+          else
+            echo "test_arm_evasion_controller.cpp not found — skipping (add when ready)"
+          fi
 
   # ---------------------------------------------------------------------------
   # FPGA Testbench (C++ simulation, no HLS toolchain needed)
@@ -76,6 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
       - name: Compile FPGA testbench
         run: |
           cd fpga
@@ -96,6 +106,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
       - name: Check setup.py builds
         run: |
           pip install --upgrade pip setuptools wheel

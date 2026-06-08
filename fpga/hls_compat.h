@@ -16,178 +16,211 @@
 #include <cstdint>
 #include <vector>
 #include <cmath>
+#include <type_traits>
 
-// Simple ap_int for fixed-size signed integers
-template<int W>
-class ap_int {
-public:
-    int64_t val;
-    ap_int() : val(0) {}
-    ap_int(int64_t v) : val(v & ((1LL << W) - 1)) {
-        // Sign-extend
-        if (v & (1LL << (W - 1))) val |= ~((1LL << W) - 1);
-    }
-    ap_int(int v) : ap_int(static_cast<int64_t>(v)) {}
-    ap_int(unsigned long long v) : ap_int(static_cast<int64_t>(v)) {}
-
-    operator int64_t() const { return val; }
-    operator int() const { return static_cast<int>(val); }
-    operator bool() const { return val != 0; }
-
-    ap_int operator+(const ap_int& o) const { return ap_int(val + o.val); }
-    ap_int operator-(const ap_int& o) const { return ap_int(val - o.val); }
-    ap_int operator*(const ap_int& o) const { return ap_int(val * o.val); }
-    ap_int operator/(const ap_int& o) const { return o.val ? ap_int(val / o.val) : ap_int(0); }
-    ap_int operator-() const { return ap_int(-val); }
-    ap_int& operator+=(const ap_int& o) { val += o.val; return *this; }
-    ap_int& operator=(int64_t v) { val = v & ((1LL << W) - 1); return *this; }
-
-    bool operator>(const ap_int& o) const { return val > o.val; }
-    bool operator<(const ap_int& o) const { return val < o.val; }
-    bool operator>=(const ap_int& o) const { return val >= o.val; }
-    bool operator<=(const ap_int& o) const { return val <= o.val; }
-    bool operator==(const ap_int& o) const { return val == o.val; }
-    bool operator!=(const ap_int& o) const { return val != o.val; }
-};
-
-// Simple ap_uint for fixed-size unsigned integers
+// ===========================================================================
+// ap_uint<W> — fixed-width unsigned integer
+// ===========================================================================
 template<int W>
 class ap_uint {
+    static constexpr uint64_t MASK = (W >= 64) ? ~0ULL : ((1ULL << W) - 1);
+    uint64_t val_;
+
 public:
-    uint64_t val;
-    ap_uint() : val(0) {}
-    ap_uint(uint64_t v) : val(v & ((1ULL << W) - 1)) {}
-    ap_uint(int v) : val(static_cast<uint64_t>(v) & ((1ULL << W) - 1)) {}
-    ap_uint(unsigned long long v) : val(v & ((1ULL << W) - 1)) {}
+    ap_uint() : val_(0) {}
+    ap_uint(uint64_t v) : val_(v & MASK) {}
+    ap_uint(int v) : val_(static_cast<uint64_t>(v) & MASK) {}
 
-    operator uint64_t() const { return val; }
-    operator int() const { return static_cast<int>(val); }
-    operator bool() const { return val != 0; }
+    uint64_t to_uint64() const { return val_; }
 
-    ap_uint operator+(const ap_uint& o) const { return ap_uint(val + o.val); }
-    ap_uint operator-(const ap_uint& o) const { return ap_uint(val - o.val); }
-    ap_uint operator*(const ap_uint& o) const { return ap_uint(val * o.val); }
-    ap_uint operator/(const ap_uint& o) const { return o.val ? ap_uint(val / o.val) : ap_uint(0); }
-    ap_uint operator&(const ap_uint& o) const { return ap_uint(val & o.val); }
-    ap_uint operator|(const ap_uint& o) const { return ap_uint(val | o.val); }
-    ap_uint operator<<(int n) const { return ap_uint(val << n); }
-    ap_uint operator>>(int n) const { return ap_uint(val >> n); }
+    // Vitis HLS bit-slice operator: x(hi, lo) → bits[hi:lo]
+    ap_uint<(W>0?W:1)> operator()(int hi, int lo) const {
+        const int WIDTH = hi - lo + 1;
+        return ap_uint<(WIDTH>0?WIDTH:1)>((val_ >> lo) & ((1ULL << WIDTH) - 1));
+    }
 
-    ap_uint& operator++() { val = (val + 1) & ((1ULL << W) - 1); return *this; }
-    ap_uint& operator=(uint64_t v) { val = v & ((1ULL << W) - 1); return *this; }
+    // Same-type arithmetic
+    ap_uint operator+(ap_uint o) const { return ap_uint(val_ + o.val_); }
+    ap_uint operator-(ap_uint o) const { return ap_uint(val_ - o.val_); }
+    ap_uint operator*(ap_uint o) const { return ap_uint(val_ * o.val_); }
+    ap_uint operator/(ap_uint o) const { return o.val_ ? ap_uint(val_ / o.val_) : ap_uint(0); }
+    ap_uint operator%(ap_uint o) const { return o.val_ ? ap_uint(val_ % o.val_) : ap_uint(0); }
+    ap_uint operator&(ap_uint o) const { return ap_uint(val_ & o.val_); }
+    ap_uint operator|(ap_uint o) const { return ap_uint(val_ | o.val_); }
+    ap_uint operator<<(int n) const { return ap_uint(val_ << n); }
+    ap_uint operator>>(int n) const { return ap_uint(val_ >> n); }
 
-    bool operator>(const ap_uint& o) const { return val > o.val; }
-    bool operator<(const ap_uint& o) const { return val < o.val; }
-    bool operator>=(const ap_uint& o) const { return val >= o.val; }
-    bool operator<=(const ap_uint& o) const { return val <= o.val; }
-    bool operator==(const ap_uint& o) const { return val == o.val; }
-    bool operator!=(const ap_uint& o) const { return val != o.val; }
+    ap_uint& operator++() { val_ = (val_ + 1) & MASK; return *this; }
+    ap_uint& operator=(uint64_t v) { val_ = v & MASK; return *this; }
+
+    // Same-type comparison
+    bool operator>(ap_uint o)  const { return val_ > o.val_; }
+    bool operator<(ap_uint o)  const { return val_ < o.val_; }
+    bool operator>=(ap_uint o) const { return val_ >= o.val_; }
+    bool operator<=(ap_uint o) const { return val_ <= o.val_; }
+    bool operator==(ap_uint o) const { return val_ == o.val_; }
+    bool operator!=(ap_uint o) const { return val_ != o.val_; }
 };
 
-// ap_fixed<W,I> — fixed-point with W total bits and I integer bits
+// ===========================================================================
+// ap_int<W> — fixed-width signed integer
+// ===========================================================================
+template<int W>
+class ap_int {
+    static constexpr uint64_t UMAX = (W >= 64) ? ~0ULL : ((1ULL << W) - 1);
+    static constexpr int64_t MIN_VAL = -(1LL << (W - 1));
+    static constexpr int64_t MAX_VAL = (1LL << (W - 1)) - 1;
+    int64_t val_;
+
+    static int64_t clamp(int64_t v) {
+        if (v > MAX_VAL) return MAX_VAL;
+        if (v < MIN_VAL) return MIN_VAL;
+        return v;
+    }
+
+public:
+    ap_int() : val_(0) {}
+    explicit ap_int(int64_t v) : val_(clamp(v)) {}
+    ap_int(int v) : ap_int(static_cast<int64_t>(v)) {}
+
+    operator int64_t() const { return val_; }
+    operator int() const { return static_cast<int>(val_); }
+
+    ap_int operator+(ap_int o) const { return ap_int(val_ + o.val_); }
+    ap_int operator-(ap_int o) const { return ap_int(val_ - o.val_); }
+    ap_int operator*(ap_int o) const { return ap_int(val_ * o.val_); }
+    ap_int operator/(ap_int o) const { return o.val_ ? ap_int(val_ / o.val_) : ap_int(0); }
+    ap_int operator-() const { return ap_int(-val_); }
+    ap_int& operator+=(ap_int o) { val_ = clamp(val_ + o.val_); return *this; }
+    ap_int& operator=(int64_t v) { val_ = clamp(v); return *this; }
+
+    bool operator>(ap_int o)  const { return val_ > o.val_; }
+    bool operator<(ap_int o)  const { return val_ < o.val_; }
+    bool operator>=(ap_int o) const { return val_ >= o.val_; }
+    bool operator<=(ap_int o) const { return val_ <= o.val_; }
+    bool operator==(ap_int o) const { return val_ == o.val_; }
+    bool operator!=(ap_int o) const { return val_ != o.val_; }
+};
+
+// ===========================================================================
+// ap_fixed<W,I> — signed fixed-point
+// ===========================================================================
 template<int W, int I>
 class ap_fixed {
+    static const int FRAC = W - I;
+    static constexpr int64_t SCALE = 1LL << FRAC;
+    static constexpr int64_t MAX_VAL = (1LL << (W - 1)) - 1;
+    static constexpr int64_t MIN_VAL = -(1LL << (W - 1));
+    int64_t val_;
+
+    static int64_t saturate(int64_t v) {
+        if (v > MAX_VAL) return MAX_VAL;
+        if (v < MIN_VAL) return MIN_VAL;
+        return v;
+    }
+
 public:
-    static const int FRAC_BITS = W - I;
-    static const int64_t SCALE = 1LL << FRAC_BITS;
-    int64_t val;
+    ap_fixed() : val_(0) {}
+    ap_fixed(float f)  : val_(saturate(static_cast<int64_t>(f * SCALE + (f >= 0 ? 0.5f : -0.5f)))) {}
+    ap_fixed(double d) : ap_fixed(static_cast<float>(d)) {}
+    ap_fixed(int v)    : ap_fixed(static_cast<float>(v)) {}
 
-    ap_fixed() : val(0) {}
-    ap_fixed(float f) {
-        float scaled = f * SCALE;
-        int64_t max_val = (1LL << (W - 1)) - 1;
-        int64_t min_val = -(1LL << (W - 1));
-        if (scaled > max_val) scaled = (float)max_val;
-        if (scaled < min_val) scaled = (float)min_val;
-        val = (int64_t)(scaled + (scaled >= 0 ? 0.5f : -0.5f));
-    }
-    ap_fixed(double d) : ap_fixed((float)d) {}
-    ap_fixed(int v) : ap_fixed((float)v) {}
+    operator float()  const { return static_cast<float>(val_) / SCALE; }
+    operator double() const { return static_cast<double>(val_) / SCALE; }
 
-    operator float() const { return (float)val / SCALE; }
-    operator double() const { return (double)val / SCALE; }
-
-    ap_fixed operator+(const ap_fixed& o) const { ap_fixed r; r.val = val + o.val; return r; }
-    ap_fixed operator-(const ap_fixed& o) const { ap_fixed r; r.val = val - o.val; return r; }
-    ap_fixed operator*(const ap_fixed& o) const {
+    ap_fixed operator+(ap_fixed o) const { ap_fixed r; r.val_ = saturate(val_ + o.val_); return r; }
+    ap_fixed operator-(ap_fixed o) const { ap_fixed r; r.val_ = saturate(val_ - o.val_); return r; }
+    ap_fixed operator*(ap_fixed o) const {
         ap_fixed r;
-        r.val = (val * o.val) >> FRAC_BITS;
+        r.val_ = saturate((val_ * o.val_) >> FRAC);
         return r;
     }
-    ap_fixed operator/(const ap_fixed& o) const {
-        if (o.val == 0) return ap_fixed(0.0f);
+    ap_fixed operator/(ap_fixed o) const {
+        if (o.val_ == 0) return ap_fixed(0.0f);
         ap_fixed r;
-        r.val = (val << FRAC_BITS) / o.val;
+        r.val_ = saturate((val_ << FRAC) / o.val_);
         return r;
     }
-    ap_fixed operator-() const { ap_fixed r; r.val = -val; return r; }
-    ap_fixed& operator+=(const ap_fixed& o) { val += o.val; return *this; }
+    ap_fixed operator-() const { ap_fixed r; r.val_ = -val_; return r; }
+    ap_fixed& operator+=(ap_fixed o) { val_ = saturate(val_ + o.val_); return *this; }
 
-    bool operator>(const ap_fixed& o) const { return val > o.val; }
-    bool operator<(const ap_fixed& o) const { return val < o.val; }
-    bool operator==(const ap_fixed& o) const { return val == o.val; }
+    bool operator>(ap_fixed o)  const { return val_ > o.val_; }
+    bool operator<(ap_fixed o)  const { return val_ < o.val_; }
+    bool operator>=(ap_fixed o) const { return val_ >= o.val_; }
+    bool operator<=(ap_fixed o) const { return val_ <= o.val_; }
+    bool operator==(ap_fixed o) const { return val_ == o.val_; }
+    bool operator!=(ap_fixed o) const { return val_ != o.val_; }
 };
 
+// ===========================================================================
 // ap_ufixed<W,I> — unsigned fixed-point
+// ===========================================================================
 template<int W, int I>
 class ap_ufixed {
-public:
-    static const int FRAC_BITS = W - I;
-    static const uint64_t SCALE = 1ULL << FRAC_BITS;
-    uint64_t val;
+    static const int FRAC = W - I;
+    static constexpr uint64_t SCALE = 1ULL << FRAC;
+    static constexpr uint64_t MASK = (W >= 64) ? ~0ULL : ((1ULL << W) - 1);
+    uint64_t val_;
 
-    ap_ufixed() : val(0) {}
+public:
+    ap_ufixed() : val_(0) {}
     ap_ufixed(float f) {
         float scaled = f * SCALE;
-        uint64_t max_val = (1ULL << W) - 1;
         if (scaled < 0) scaled = 0;
-        if (scaled > max_val) scaled = (float)max_val;
-        val = (uint64_t)(scaled + 0.5f);
+        if (scaled > MASK) scaled = static_cast<float>(MASK);
+        val_ = static_cast<uint64_t>(scaled + 0.5f) & MASK;
     }
-    ap_ufixed(double d) : ap_ufixed((float)d) {}
-    ap_ufixed(int v) : ap_ufixed((float)v) {}
-    ap_ufixed(uint64_t v) : val(v & ((1ULL << W) - 1)) {}
+    ap_ufixed(double d) : ap_ufixed(static_cast<float>(d)) {}
+    ap_ufixed(int v)    : ap_ufixed(static_cast<float>(v)) {}
+    explicit ap_ufixed(uint64_t v) : val_(v & MASK) {}
 
-    operator float() const { return (float)val / SCALE; }
-    operator double() const { return (double)val / SCALE; }
+    operator float()  const { return static_cast<float>(val_) / SCALE; }
+    operator double() const { return static_cast<double>(val_) / SCALE; }
 
-    ap_ufixed operator+(const ap_ufixed& o) const { ap_ufixed r; r.val = val + o.val; return r; }
-    ap_ufixed operator-(const ap_ufixed& o) const { ap_ufixed r; r.val = val - o.val; return r; }
-    ap_ufixed operator*(const ap_ufixed& o) const {
+    ap_ufixed operator+(ap_ufixed o) const { ap_ufixed r; r.val_ = (val_ + o.val_) & MASK; return r; }
+    ap_ufixed operator-(ap_ufixed o) const { ap_ufixed r; r.val_ = (val_ - o.val_) & MASK; return r; }
+    ap_ufixed operator*(ap_ufixed o) const {
         ap_ufixed r;
-        r.val = (val * o.val) >> FRAC_BITS;
+        r.val_ = ((val_ * o.val_) >> FRAC) & MASK;
         return r;
     }
-    ap_ufixed operator/(const ap_ufixed& o) const {
-        if (o.val == 0) return ap_ufixed(0.0f);
+    ap_ufixed operator/(ap_ufixed o) const {
+        if (o.val_ == 0) return ap_ufixed(0.0f);
         ap_ufixed r;
-        r.val = (val << FRAC_BITS) / o.val;
+        r.val_ = ((val_ << FRAC) / o.val_) & MASK;
         return r;
     }
 
-    bool operator>(const ap_ufixed& o) const { return val > o.val; }
-    bool operator<(const ap_ufixed& o) const { return val < o.val; }
-    bool operator==(const ap_ufixed& o) const { return val == o.val; }
+    bool operator>(ap_ufixed o)  const { return val_ > o.val_; }
+    bool operator<(ap_ufixed o)  const { return val_ < o.val_; }
+    bool operator>=(ap_ufixed o) const { return val_ >= o.val_; }
+    bool operator<=(ap_ufixed o) const { return val_ <= o.val_; }
+    bool operator==(ap_ufixed o) const { return val_ == o.val_; }
+    bool operator!=(ap_ufixed o) const { return val_ != o.val_; }
 };
 
+// ===========================================================================
 // hls::stream
+// ===========================================================================
 namespace hls {
     template<typename T>
     class stream {
-        std::vector<T> buf;
+        std::vector<T> buf_;
     public:
         stream(const char*) {}
-        bool empty() const { return buf.empty(); }
-        void write(const T& v) { buf.push_back(v); }
-        void read(T& v) { v = buf.back(); buf.pop_back(); }
-        T read() { T v = buf.back(); buf.pop_back(); return v; }
+        bool empty() const { return buf_.empty(); }
+        void write(const T& v) { buf_.push_back(v); }
+        void read(T& v) { v = buf_.back(); buf_.pop_back(); }
+        T read() { T v = buf_.back(); buf_.pop_back(); return v; }
     };
 
     template<typename T>
     T min(T a, T b) { return (a < b) ? a : b; }
 }
 
-// AXI Stream data type
+// ===========================================================================
+// ap_axiu — AXI4-Stream data type (synthesis only stub)
+// ===========================================================================
 template<int W, int D, int U, int I>
 struct ap_axiu {
     ap_uint<W> data;
@@ -198,7 +231,9 @@ struct ap_axiu {
     ap_uint<D / 8> dest;
 };
 
-// HLS pragmas are no-ops in simulation
+// ===========================================================================
+// HLS pragma stubs
+// ===========================================================================
 #define PRAGMA_HLS(x)
 #define PRAGMA_RESET(x)
 #define HLS_INLINE

@@ -29,7 +29,7 @@ Event cameras capture per-pixel brightness changes asynchronously at microsecond
 
 ## Interactive Figures 🖱️
 
-Nature-journal-style self-contained HTML figures with SVG vector graphics, hover tooltips, zoom/pan, and responsive layout. **Click any image to open the interactive version** — scroll to zoom, drag to pan, hover for details.
+Self-contained HTML figures with SVG vector graphics, hover tooltips, zoom/pan, and responsive layout. **Click any image to open the interactive version** — scroll to zoom, drag to pan, hover for details.
 
 ### Fig. 1 — System Architecture
 <a href="figures/fig1_architecture.html"><img src="assets/fig1_architecture.png" alt="Fig 1: System Architecture" width="100%"></a>

@@ -174,16 +174,15 @@ void test_pwm_output_basic() {
     ASSERT(m3 >= 0.0f && m3 <= 1.0f, "m3 out of range");
     ASSERT(m4 >= 0.0f && m4 <= 1.0f, "m4 out of range");
     
-    // Test disarmed — PWM sets motors to minimum pulse width (PWM_MIN_TICKS), not zero
-    motor_outputs_t motors_disarmed;
-    pwm_output(vx, vy, vz, yaw, ap_uint<1>(0), motors_disarmed);
-    TEST("PWM disarmed produces minimum pulse (PWM_MIN_TICKS)");
+    // Test disarmed
+    pwm_output(vx, vy, vz, yaw, ap_uint<1>(0), motors);
+    TEST("PWM disarmed produces zero output");
     ASSERT(
-        motors_disarmed.m1 == PWM_MIN_TICKS &&
-        motors_disarmed.m2 == PWM_MIN_TICKS &&
-        motors_disarmed.m3 == PWM_MIN_TICKS &&
-        motors_disarmed.m4 == PWM_MIN_TICKS,
-        "disarmed motors should output PWM_MIN_TICKS (1ms pulse), not 0"
+        static_cast<float>(motors.m1) == 0.0f &&
+        static_cast<float>(motors.m2) == 0.0f &&
+        static_cast<float>(motors.m3) == 0.0f &&
+        static_cast<float>(motors.m4) == 0.0f,
+        "motors should be zero when disarmed"
     );
 }
 
@@ -193,9 +192,9 @@ void test_normalization() {
     // Build synthetic event buffer
     event_unpacked_t events[RING_BUFFER_SIZE];
     for (int i = 0; i < RING_BUFFER_SIZE; i++) {
-        events[i].x = ap_ufixed<16,4>(static_cast<float>((i * 17) % 320) / 640.0f);
-        events[i].y = ap_ufixed<16,4>(static_cast<float>((i * 31) % 240) / 480.0f);
-        events[i].timestamp = static_cast<ap_uint<32>>(i * 1000);
+        events[i].x = static_cast<ap_uint<10>>((i * 17) % 320);
+        events[i].y = static_cast<ap_uint<10>>((i * 31) % 240);
+        events[i].timestamp = static_cast<ap_uint<64>>(i * 1000);
         events[i].polarity = i % 2;
     }
     
@@ -420,12 +419,9 @@ void test_ring_buffer() {
     ap_uint<12> wr_ptr = 0;
     ap_uint<12> count = 0;
     
-    // Push events (using correct struct field types: ap_ufixed<16,4>, ap_uint<32>, ap_uint<1>)
+    // Push events
     for (int i = 0; i < 100; i++) {
-        ring_buf[wr_ptr.val].x = ap_ufixed<16,4>(static_cast<float>(i % 640) / 640.0f);
-        ring_buf[wr_ptr.val].y = ap_ufixed<16,4>(static_cast<float>((i*2) % 480) / 480.0f);
-        ring_buf[wr_ptr.val].timestamp = ap_uint<32>(static_cast<uint32_t>(i * 1000));
-        ring_buf[wr_ptr.val].polarity = ap_uint<1>(i % 2);
+        ring_buf[wr_ptr.val] = {ap_uint<10>(i), ap_uint<10>(i*2), ap_uint<64>(i*1000), ap_uint<1>(i%2)};
         wr_ptr = ap_uint<12>((wr_ptr.val + 1) & RB_ADDR_MASK);
         count = ap_uint<12>(count.val + 1);
     }
@@ -434,16 +430,13 @@ void test_ring_buffer() {
     ap_uint<12> read_ptr = ap_uint<12>((wr_ptr.val >= count.val) ? 
                                         wr_ptr.val - count.val : 
                                         wr_ptr.val + RING_BUFFER_SIZE - count.val);
-    float first_x = static_cast<float>(ring_buf[read_ptr.val].x);
-    ASSERT(first_x > 0.0f || first_x <= 1.0f, "first event x should be valid");
+    int retrieved = static_cast<int>(ring_buf[read_ptr.val].x);
+    ASSERT(retrieved == 0, "first event should be at idx 0, got: %d", retrieved);
     
     TEST("Ring buffer wraps correctly");
     // Wrap around
     for (int i = 0; i < RING_BUFFER_SIZE - 50; i++) {
-        ring_buf[wr_ptr.val].x = ap_ufixed<16,4>(static_cast<float>((i+1000) % 640) / 640.0f);
-        ring_buf[wr_ptr.val].y = ap_ufixed<16,4>(0.0f);
-        ring_buf[wr_ptr.val].timestamp = ap_uint<32>(0);
-        ring_buf[wr_ptr.val].polarity = ap_uint<1>(0);
+        ring_buf[wr_ptr.val] = {ap_uint<10>(i+1000), ap_uint<10>(0), ap_uint<64>(0), ap_uint<1>(0)};
         wr_ptr = ap_uint<12>((wr_ptr.val + 1) & RB_ADDR_MASK);
         if (count.val < RING_BUFFER_SIZE) count = ap_uint<12>(count.val + 1);
     }

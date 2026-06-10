@@ -75,22 +75,16 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
-      - name: Attempt FPGA testbench compile (requires Vitis HLS)
+      - name: FPGA C++ build check (Vitis HLS not available)
         run: |
-          cd fpga
-          echo "Vitis HLS required for full testbench compilation."
-          echo "Standard g++ cannot compile Vitis-specific type conversions."
-          g++ -std=c++11 -I. -D__SIMULATION__ -o testbench testbench.cpp -lm 2>&1 | tail -5 || true
-          echo "Testbench compile requires Vitis HLS — skipping execution."
-      - name: Check FPGA testbench code compiles in simulation mode
+          echo "FPGA C++ testbench requires Vitis HLS (Xilinx toolchain)."
+          echo "Install Vitis HLS 2023.1+ and run: vitis_hls -f fpga/build.tcl csim"
+          echo "Standard g++ cannot compile Vitis-specific fixed-point type conversions."
+          echo "Skipping compilation on GitHub Actions runner."
+      - name: Verify config.yaml syntax
         run: |
-          cd fpga
-          echo "FPGA testbench type-checked. Full compilation requires Vitis HLS."
-          echo "golden_model_test.py validation runs in python-tests job."
-      - name: Verify config.yaml is valid YAML
-        run: |
-          python -c "import yaml; yaml.safe_load(open('fpga/config.yaml'))" || true
-          echo "Config parse attempted."
+          pip install pyyaml -q
+          python -c "import yaml; c=yaml.safe_load(open('fpga/config.yaml')); print('config.yaml: OK (',len(c),'sections)')"
 
   # ---------------------------------------------------------------------------
   # Build Check

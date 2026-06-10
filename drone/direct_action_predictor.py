@@ -33,10 +33,13 @@ and can be used as:
 import numpy as np
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 import os
+
+if TYPE_CHECKING:
+    from .event_frame_aggregator import EventFrameTemporalStack
 
 
 # ---------------------------------------------------------------------------

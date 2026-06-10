@@ -1,3 +1,4 @@
+
 <h1 align='center' style="text-align:center; font-weight:bold; font-size:2.0em;letter-spacing:2.0px;"> FPGA Event-Based Drone Collision Avoidance </h1>
 
 <p align='center' style="text-align:center;font-size:1.15em;">
@@ -118,13 +119,13 @@ Two complementary collision avoidance pipelines run in parallel:
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              DRONE MAIN LOOP                             │
 │                                                                          │
-│  Event Camera (AER) ──────► FPGA Fabric ──────► ARM CPU ────► Motors     │
-│       │                        │                    │                    │
-│       │                     ┌──┴─────────┐      ┌─────┴──────────┐       │
-│       │                     │  encoder       │  │  collision_pred│       │
-│       │                     │  spatial_hash  │  │  evasion_ctrl  │       │
-│       │                     │  ring_buf      │  │  safety_wdog   │       │
-│       │                     │  normalization │  │  PWM output    │       │
+│  Event Camera (AER) ──────►  FPGA Fabric ──────► ARM CPU ────► Motors    │
+│       │                        │                      │                  │
+│       │                     ┌──┴────────────┐   ┌─────┴──────────┐       │
+│       │                     │    encoder    │   │ collision_pred │       │
+│       │                     │  spatial_hash │   │  evasion_ctrl  │       │
+│       │                     │   ring_buf    │   │  safety_wdog   │       │
+│       │                     │ normalization │   │  PWM output    │       │
 │       │                     └───────────────┘   └────────────────┘       │
 │       │                                                                  │
 │       │  PIPELINE 1: Flow-Based (VecKM, ~100Hz)                          │
@@ -134,16 +135,16 @@ Two complementary collision avoidance pipelines run in parallel:
 │       │  │  clustering)  │   └──────────────┘    └───────────────────┘   │
 │       │  └──────────────┘                                                │
 │       │                                                                  │
-│       │  PIPELINE 2: Direct CNN (Bonazzi 2025, ~1kHz)                    │
+│       │  PIPELINE 2: Direct CNN ( 2025, ~1kHz)                           │
 │       │  ┌───────────────┐   ┌───────────────────┐                       │
 │       │  │ EventFrameAgg │──►│ DirectActionPred  │                       │
-│       │  │ (80x80 @1kHz)  │  │ (DPU CNN 5-class) │                       │
+│       │  │ (80x80 @1kHz) │   │ (DPU CNN 5-class) │                       │
 │       │  └───────────────┘   └───────────────────┘                       │
 │       │                                                                  │
 │       │  AUXILIARY MODULES                                               │
 │       │  ┌──────────────────┐ ┌────────────────┐ ┌────────────────────┐  │
-│       │  │ ContrastMaximizer │ │ DepthEstimator │ │ DenseTTCEstimator │  │
-│       │  │ (CMax-SLAM, 2018) │ │ (E2Depth, 2020)│ │ (EVReflex, 2021)  │  │
+│       │  │ContrastMaximizer │ │ DepthEstimator │ │ DenseTTCEstimator  │  │
+│       │  │(CMax-SLAM, 2018) │ │ (E2Depth, 2020)│ │ (EVReflex, 2021)   │  │
 │       │  └──────────────────┘ └────────────────┘ └────────────────────┘  │
 │       │                                                                  │
 └──────────────────────────────────────────────────────────────────────────┘

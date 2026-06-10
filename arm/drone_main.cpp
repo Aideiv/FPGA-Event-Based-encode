@@ -25,6 +25,7 @@
 
 #include "collision_predictor.h"
 #include "evasion_controller.h"
+#include "kalman_tracker.h"
 
 // FreeRTOS or bare-metal alternatives
 #ifdef FREERTOS
@@ -86,11 +87,11 @@ public:
     }
 
     void write_register(uint32_t offset, uint32_t value) {
-        registers_[offset / 4] = value;
+        registers_[(offset - FPGA_BASE_ADDR) / 4] = value;
     }
 
     uint32_t read_register(uint32_t offset) {
-        return registers_[offset / 4];
+        return registers_[(offset - FPGA_BASE_ADDR) / 4];
     }
 
     // -----------------------------------------------------------------
@@ -182,7 +183,8 @@ private:
 // ---------------------------------------------------------------------------
 // Telemetry / logging
 // ---------------------------------------------------------------------------
-void log_telemetry(const ThreatAssessment& assess, const EvasionCommand& cmd) {
+void log_telemetry(const ThreatAssessment& assess, const EvasionCommand& cmd,
+                   size_t n_tracks, size_t n_confirmed) {
     static uint32_t frame = 0;
     frame++;
 
@@ -198,9 +200,10 @@ void log_telemetry(const ThreatAssessment& assess, const EvasionCommand& cmd) {
         printf("CLEAR                               | ");
     }
 
-    printf("%-9s vx=%+5.2f vy=%+5.2f vz=%+5.2f yaw=%+5.2f\n",
+    printf("%-9s vx=%+5.2f vy=%+5.2f vz=%+5.2f yaw=%+5.2f | trk=%zu conf=%zu\n",
            evasion_level_name(cmd.level),
-           cmd.velocity_x, cmd.velocity_y, cmd.velocity_z, cmd.yaw_rate);
+           cmd.velocity_x, cmd.velocity_y, cmd.velocity_z, cmd.yaw_rate,
+           n_tracks, n_confirmed);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +244,15 @@ int main(int /*argc*/, char** /*argv*/) {
     evade_cfg.repulsion_strength = 1.0f;
     EvasionController evader(evade_cfg);
 
+    // Initialize Kalman tracker
+    // Config defaults are tuned for 100Hz — no overrides needed:
+    //   dt=0.01s, process_noise=0.005, meas_noise=0.05
+    //   max_age=30 frames (0.3s), min_hits_to_confirm=3 frames (30ms)
+    KalmanTracker tracker;
+
+    // Persistent track list — lives across loop iterations, passed by ref into tracker.update()
+    std::vector<TrackedObject> tracks;
+
     // Control loop timing
     const int CONTROL_FREQ_HZ = 100;  // 100Hz control loop
     const int CONTROL_PERIOD_MS = 1000 / CONTROL_FREQ_HZ;
@@ -269,6 +281,28 @@ int main(int /*argc*/, char** /*argv*/) {
             assessment = predictor.assess(events);
         }
 
+        // Step 2b: Kalman tracker — always called, even with zero detections.
+        // Empty detections = no new tracks created, but existing tracks age toward pruning.
+        // Skipping this when n_events==0 would make tracks immortal during quiet frames.
+        tracker.update(assessment.objects, tracks);
+
+        // Confirmed tracks have seen >= 3 consecutive hits (30ms at 100Hz).
+        // Single-frame blips are suppressed — the evasion controller never sees them.
+        auto confirmed = tracker.get_confirmed_tracks(tracks);
+
+        // Replace raw detections with Kalman-filtered confirmed-track positions.
+        // Each ObjectCluster retains its original TTC/urgency metadata (latest_cluster)
+        // but center_x/y are overridden with the smoothed KF estimate.
+        assessment.objects.clear();
+        for (const auto& t : confirmed) {
+            ObjectCluster oc = t.latest_cluster;  // carries TTC, flow, size metadata
+            oc.center_x = t.kf_state.x;           // KF-filtered position
+            oc.center_y = t.kf_state.y;
+            assessment.objects.push_back(oc);
+        }
+        // threat_detected now reflects confirmed track presence, not raw noisy detections
+        assessment.threat_detected = !confirmed.empty();
+
         // Step 3: Compute evasion command
         EvasionCommand cmd = evader.compute_command(assessment);
 
@@ -278,7 +312,7 @@ int main(int /*argc*/, char** /*argv*/) {
         }
 
         // Step 5: Telemetry
-        log_telemetry(assessment, cmd);
+        log_telemetry(assessment, cmd, tracks.size(), confirmed.size());
 
         // Auto-arm after startup countdown
         if (!g_motors_armed && arm_countdown > 0) {

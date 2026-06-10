@@ -253,10 +253,11 @@ def test_encoder_equivalence():
             dim=1,
         )
 
-        # Run estimator
+        # Run estimator — compute adjacency matrix first
         with torch.no_grad():
-            flow_ref, uncert_ref = model(events)
-            flow_ref = flow_ref.numpy()
+            J = get_adj_matrix(events[:, 1:], model.radius)
+            out = model(events, J)
+            flow_ref = out[:, :2].numpy()
 
         # ── Simulated INT16 fixed-point pipeline
         # Mimic FPGA encoder_systolic.h quantization:

@@ -65,11 +65,29 @@ class NormalFlowEstimator(nn.Module):
     
     @staticmethod
     def load_model(estimator, training_set):
-        # For FPGA preset, fall back to UNION weights (FPGA-compatible retraining needed)
-        load_key = training_set if training_set != 'FPGA' else 'UNION'
-        # Load the .pth file from the models directory
-        with pkg_resources.open_binary(models, f"{load_key}.pth") as f:
-            state_dict = torch.load(f, map_location=torch.device("cpu"), weights_only=True)
+        """Load the appropriate weight file for the training set.
+        
+        For 'FPGA' training_set, loads FPGA.pth (d=128, alpha=8).
+        This file is generated from UNION.pth by train/convert_weights_to_fpga.py.
+        If FPGA.pth is missing, falls back to UNION.pth with a warning.
+        """
+        import warnings
+        load_key = training_set
+        try:
+            with pkg_resources.open_binary(models, f"{load_key}.pth") as f:
+                state_dict = torch.load(f, map_location=torch.device("cpu"), weights_only=True)
+        except FileNotFoundError:
+            if training_set == 'FPGA':
+                # FPGA.pth not generated yet — fall back to UNION and hope shapes match
+                warnings.warn(
+                    "FPGA.pth not found. Falling back to UNION.pth. "
+                    "Run: python train/convert_weights_to_fpga.py --input models/models/UNION.pth "
+                    "--output models/models/FPGA.pth"
+                )
+                with pkg_resources.open_binary(models, "UNION.pth") as f:
+                    state_dict = torch.load(f, map_location=torch.device("cpu"), weights_only=True)
+            else:
+                raise
         estimator.load_state_dict(state_dict)
         estimator.eval()
         return estimator

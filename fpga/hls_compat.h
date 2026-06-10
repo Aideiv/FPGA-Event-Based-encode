@@ -24,42 +24,47 @@
 template<int W>
 class ap_uint {
     static constexpr uint64_t MASK = (W >= 64) ? ~0ULL : ((1ULL << W) - 1);
-    uint64_t val_;
 
 public:
-    ap_uint() : val_(0) {}
-    ap_uint(uint64_t v) : val_(v & MASK) {}
-    ap_uint(int v) : val_(static_cast<uint64_t>(v) & MASK) {}
+    uint64_t val;   // Vitis HLS compatible public member
 
-    uint64_t to_uint64() const { return val_; }
+    ap_uint() : val(0) {}
+    ap_uint(uint64_t v) : val(v & MASK) {}
+    ap_uint(int v) : val(static_cast<uint64_t>(v) & MASK) {}
+
+    uint64_t to_uint64() const { return val; }
+    operator float() const { return static_cast<float>(val); }
+    operator double() const { return static_cast<double>(val); }
+    operator int() const { return static_cast<int>(val); }
+    operator unsigned int() const { return static_cast<unsigned int>(val); }
 
     // Vitis HLS bit-slice operator: x(hi, lo) → bits[hi:lo]
     ap_uint<(W>0?W:1)> operator()(int hi, int lo) const {
         const int WIDTH = hi - lo + 1;
-        return ap_uint<(WIDTH>0?WIDTH:1)>((val_ >> lo) & ((1ULL << WIDTH) - 1));
+        return ap_uint<(WIDTH>0?WIDTH:1)>((val >> lo) & ((1ULL << WIDTH) - 1));
     }
 
     // Same-type arithmetic
-    ap_uint operator+(ap_uint o) const { return ap_uint(val_ + o.val_); }
-    ap_uint operator-(ap_uint o) const { return ap_uint(val_ - o.val_); }
-    ap_uint operator*(ap_uint o) const { return ap_uint(val_ * o.val_); }
-    ap_uint operator/(ap_uint o) const { return o.val_ ? ap_uint(val_ / o.val_) : ap_uint(0); }
-    ap_uint operator%(ap_uint o) const { return o.val_ ? ap_uint(val_ % o.val_) : ap_uint(0); }
-    ap_uint operator&(ap_uint o) const { return ap_uint(val_ & o.val_); }
-    ap_uint operator|(ap_uint o) const { return ap_uint(val_ | o.val_); }
-    ap_uint operator<<(int n) const { return ap_uint(val_ << n); }
-    ap_uint operator>>(int n) const { return ap_uint(val_ >> n); }
+    ap_uint operator+(ap_uint o) const { return ap_uint(val + o.val); }
+    ap_uint operator-(ap_uint o) const { return ap_uint(val - o.val); }
+    ap_uint operator*(ap_uint o) const { return ap_uint(val * o.val); }
+    ap_uint operator/(ap_uint o) const { return o.val ? ap_uint(val / o.val) : ap_uint(0); }
+    ap_uint operator%(ap_uint o) const { return o.val ? ap_uint(val % o.val) : ap_uint(0); }
+    ap_uint operator&(ap_uint o) const { return ap_uint(val & o.val); }
+    ap_uint operator|(ap_uint o) const { return ap_uint(val | o.val); }
+    ap_uint operator<<(int n) const { return ap_uint(val << n); }
+    ap_uint operator>>(int n) const { return ap_uint(val >> n); }
 
-    ap_uint& operator++() { val_ = (val_ + 1) & MASK; return *this; }
-    ap_uint& operator=(uint64_t v) { val_ = v & MASK; return *this; }
+    ap_uint& operator++() { val = (val + 1) & MASK; return *this; }
+    ap_uint& operator=(uint64_t v) { val = v & MASK; return *this; }
 
     // Same-type comparison
-    bool operator>(ap_uint o)  const { return val_ > o.val_; }
-    bool operator<(ap_uint o)  const { return val_ < o.val_; }
-    bool operator>=(ap_uint o) const { return val_ >= o.val_; }
-    bool operator<=(ap_uint o) const { return val_ <= o.val_; }
-    bool operator==(ap_uint o) const { return val_ == o.val_; }
-    bool operator!=(ap_uint o) const { return val_ != o.val_; }
+    bool operator>(ap_uint o)  const { return val > o.val; }
+    bool operator<(ap_uint o)  const { return val < o.val; }
+    bool operator>=(ap_uint o) const { return val >= o.val; }
+    bool operator<=(ap_uint o) const { return val <= o.val; }
+    bool operator==(ap_uint o) const { return val == o.val; }
+    bool operator!=(ap_uint o) const { return val != o.val; }
 };
 
 // ===========================================================================
@@ -144,6 +149,18 @@ public:
     ap_fixed operator-() const { ap_fixed r; r.val_ = -val_; return r; }
     ap_fixed& operator+=(ap_fixed o) { val_ = saturate(val_ + o.val_); return *this; }
 
+    // Right-shift by integer (Vitis HLS: arithmetic shift for signed)
+    ap_fixed operator>>(int n) const {
+        ap_fixed r;
+        r.val_ = saturate(val_ >> n);
+        return r;
+    }
+    ap_fixed operator<<(int n) const {
+        ap_fixed r;
+        r.val_ = saturate(val_ << n);
+        return r;
+    }
+
     bool operator>(ap_fixed o)  const { return val_ > o.val_; }
     bool operator<(ap_fixed o)  const { return val_ < o.val_; }
     bool operator>=(ap_fixed o) const { return val_ >= o.val_; }
@@ -210,8 +227,15 @@ namespace hls {
         stream(const char*) {}
         bool empty() const { return buf_.empty(); }
         void write(const T& v) { buf_.push_back(v); }
-        void read(T& v) { v = buf_.back(); buf_.pop_back(); }
-        T read() { T v = buf_.back(); buf_.pop_back(); return v; }
+        void read(T& v) {
+            v = buf_.front();
+            buf_.erase(buf_.begin());
+        }
+        T read() {
+            T v = buf_.front();
+            buf_.erase(buf_.begin());
+            return v;
+        }
     };
 
     template<typename T>

@@ -90,6 +90,17 @@ void collision_avoidance_top(
 
     static encoder_weights_t enc_weights;
     #pragma HLS BIND_STORAGE variable=enc_weights type=ROM_T2P impl=BRAM
+    static bool weights_init = false;
+    if (!weights_init) {
+        WEIGHTS_INIT:
+        for (int i = 0; i < 3; i++) {
+            for (int d = 0; d < D_ENC; d++) {
+                #pragma HLS PIPELINE II=1
+                enc_weights[i][d] = ENCODER_WEIGHTS[i][d];
+            }
+        }
+        weights_init = true;
+    }
 
     // -------------------------------------------------------------------
     // Pipeline state machine

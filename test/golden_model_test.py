@@ -235,19 +235,20 @@ def test_encoder_equivalence():
     try:
         from models.params import BaseParams
 
-        model = NormalEstimator(BaseParams(), device="cpu")
+        params = BaseParams()
+        model = NormalEstimator(d=params.d, alpha=params.alpha)
         model.eval()
 
         # Convert to tensors
         xy_t = torch.from_numpy(events_xy)
         t_t = torch.from_numpy(events_t).float()
 
-        # Normalize events
+        # Normalize events using param attributes directly (not callables)
         events = torch.stack(
             [
-                t_t * model.params.t_radius(),
-                xy_t[:, 0] * model.params.pxl_radius(),
-                xy_t[:, 1] * model.params.pxl_radius(),
+                t_t * params.t_radius,
+                xy_t[:, 0] * params.pxl_radius,
+                xy_t[:, 1] * params.pxl_radius,
             ],
             dim=1,
         )
@@ -330,7 +331,8 @@ def test_ensemble_vs_single_pass():
     try:
         from models.params import BaseParams
 
-        model = NormalEstimator(BaseParams(), device="cpu")
+        params = BaseParams()
+        model = NormalEstimator(d=params.d, alpha=params.alpha)
         model.eval()
 
         np.random.seed(99)
@@ -343,9 +345,9 @@ def test_ensemble_vs_single_pass():
         t_t = torch.from_numpy(events_t).float()
         events = torch.stack(
             [
-                t_t * model.params.t_radius(),
-                xy_t[:, 0] * model.params.pxl_radius(),
-                xy_t[:, 1] * model.params.pxl_radius(),
+                t_t * params.t_radius,
+                xy_t[:, 0] * params.pxl_radius,
+                xy_t[:, 1] * params.pxl_radius,
             ],
             dim=1,
         )

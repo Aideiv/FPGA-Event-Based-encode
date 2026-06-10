@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 from models.params import FPGAParams
-from models.estimator import NormalEstimator
+from models.estimator import NormalEstimator, get_adj_matrix
 
 # ---------------------------------------------------------------------------
 # Config mirror check: verify constants match between Python, HLS, and YAML
@@ -354,10 +354,9 @@ def test_ensemble_vs_single_pass():
 
         # Single pass (identity rotation)
         with torch.no_grad():
-            # Force single pass by setting ensemble=1 internally
             model.eval()
-            # Direct forward without ensemble wrapper
-            J = model.get_adj_matrix(events[:, 1:], model.radius)
+            # Use the module-level get_adj_matrix function
+            J = get_adj_matrix(events[:, 1:], model.radius)
             out = model(events, J)
             single_pass_flow = out[:, :2].numpy()
 
@@ -370,7 +369,7 @@ def test_ensemble_vs_single_pass():
             rotated_xy = events[:, 1:] @ R.T
             rotated_events = torch.cat([events[:, :1], rotated_xy], dim=1)
 
-            J_rot = model.get_adj_matrix(rotated_events[:, 1:], model.radius)
+            J_rot = get_adj_matrix(rotated_events[:, 1:], model.radius)
             with torch.no_grad():
                 out_rot = model(rotated_events, J_rot)
 

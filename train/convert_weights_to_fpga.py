@@ -247,16 +247,22 @@ if __name__ == '__main__':
             src = torch.load(args.input, map_location='cpu', weights_only=True)
             print(f"  ✓ {args.input} loaded ({len(src)} keys)")
             # Check A matrix dimensions
-            if 'encoder.A' in src:
-                a_shape = src['encoder.A'].shape
-                print(f"  encoder.A: {list(a_shape)}")
+            # Check for encoder.A or vkm.A (both naming conventions exist)
+            a_key = None
+            for candidate in ('encoder.A', 'vkm.A'):
+                if candidate in src:
+                    a_key = candidate
+                    break
+            if a_key:
+                a_shape = src[a_key].shape
+                print(f"  {a_key}: {list(a_shape)}")
                 if a_shape[1] >= 128:
                     print("  ✓ A matrix has >=128 columns — can truncate to d=128")
                 else:
                     print(f"  ✗ A matrix only has {a_shape[1]} columns — need d >= 128")
                     sys.exit(1)
             else:
-                print("  ✗ encoder.A key not found in source state_dict")
+                print("  ✗ encoder.A/vkm.A key not found in source state_dict")
                 sys.exit(1)
             print("  ✓ Validation passed")
         except Exception as e:

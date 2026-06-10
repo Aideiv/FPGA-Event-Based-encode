@@ -131,8 +131,7 @@ class EvasionController:
 
     def _determine_level(self, danger: float) -> EvasionLevel:
         """Map overall danger value to evasion level (highest match wins)."""
-        # Check from highest threshold down to get
-                       EvasionLevel.CRITICAL, EvasionLevel.EMERGENCY]:
+        for level in [EvasionLevel.EMERGENCY, EvasionLevel.CRITICAL, EvasionLevel.WARNING, EvasionLevel.CAUTION]:
             if danger >= self.danger_thresholds[level]:
                 return level
         return EvasionLevel.NONE

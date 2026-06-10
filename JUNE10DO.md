@@ -214,3 +214,89 @@ git push origin your-initials/june10-task1
 | DevOps | ⬜ | ⬜ | ⬜ | ⬜ | 0/4 |
 | Docs | ⬜ | ⬜ | ⬜ | ⬜ | 0/4 |
 | Security | ⬜ | ⬜ | ⬜ | — | 0/3 |
+
+---
+
+## IQT Due Diligence Readiness
+
+> **The problem:** `git shortlog -sn` currently shows 1 committer. IQT technical due diligence runs this command as step one. A single-contributor repo with 9 CODEOWNERS teams and no multi-author PR history is a red flag — it looks like a solo founder with a padded org chart.
+
+### What IQT Will Check
+
+| Signal | What They Look For | Current State | 🚩 Level |
+|--------|-------------------|---------------|----------|
+| **`git shortlog -sn`** | Multiple authors with commits proportional to their role | 1 author, 100% of commits | 🔴 Critical |
+| **PR merge history** | PRs opened by different users, merged by different users | All direct-pushed to `main` | 🔴 Critical |
+| **Code review activity** | Different people reviewing each other's code in PR threads | No review history exists | 🔴 Critical |
+| **GitHub team membership** | Do `@Enotrium/fpga`, `@Enotrium/ml`, etc. have real members visible on the org page? | Unknown — teams may be empty | 🔴 Critical |
+| **Branch protection rules** | Is `main` protected? Require PRs? Require reviews? | No protection — direct push allowed | 🟠 High |
+| **Contributor graph** | Green squares across multiple repos, not just one person | Likely 1 person across all repos | 🔴 Critical |
+| **Cross-repo consistency** | Do other Enotrium repos show the same single-contributor pattern? | Likely yes | 🟠 High |
+| **Org README / profile** | Does github.com/Enotrium list the team with roles and faces? | Unknown | 🟡 Medium |
+| **Signed commits** | Are commits verified (GPG/SSH signed)? | Unknown | 🟡 Medium |
+| **SBOM / dependency tracking** | `requirements.txt` frozen? `package-lock.json` present? | Yes (both present) | 🟢 Good |
+
+### Immediate Org-Level Actions (Beyond JUNE10DO Tasks)
+
+These must happen **before** the 29 code tasks or the multi-author commits will look staged:
+
+| # | Action | Owner | Why IQT Cares |
+|---|--------|-------|---------------|
+| 1 | **Populate GitHub teams NOW** | CTO / Admin | Add real people to `@Enotrium/fpga`, `@Enotrium/embedded`, `@Enotrium/autonomy`, `@Enotrium/ml`, `@Enotrium/qa`, `@Enotrium/devops`, `@Enotrium/docs`, `@Enotrium/security`, `@Enotrium/systems`, `@Enotrium/core`. Teams must have visible members on https://github.com/orgs/Enotrium/teams before anyone opens a PR. |
+| 2 | **Enable branch protection on `main`** | DevOps | Settings → Branches → Add rule for `main`: require pull request before merging, require 1 approval, dismiss stale reviews, require status checks (CI). This forces multi-author PR workflow and creates visible review history. |
+| 3 | **Create `AUTHORS.md`** | Docs | List every team member with: full name, role, GitHub handle, email, domain expertise (e.g., "FPGA/Vitis HLS", "PyTorch/event cameras"). Include headshots if possible. Link from `README.md`. Humanizes the team — proves 8 real people exist. |
+| 4 | **Everyone adds a verified email to GitHub** | Each person | Settings → Emails → Add and verify work email. Without this, commits may not attribute correctly and won't show on the contributor graph. |
+| 5 | **Everyone configures GPG/SSH commit signing** | Each person | `git config --global commit.gpgsign true`. Verified commits show a green "Verified" badge — IQT checks this. In-Q-Tel's own standard requires signed commits. |
+| 6 | **Audit all Enotrium repos for same pattern** | CTO | Run `git shortlog -sn` on every repo. If they all show 1 author, apply the same JUNE10DO pattern to each. Inconsistent contributor counts across repos = 🚩. |
+| 7 | **Set up org-level README** | Docs | https://github.com/Enotrium should have an org README (`.github` repo) listing the mission, team, active repos, and links to key docs. This is the first thing IQT opens. |
+| 8 | **Cross-link repos** | Docs | Every repo's README should link back to https://github.com/Enotrium and list its CODEOWNERS. Shows cohesive engineering org, not scattered solo projects. |
+| 9 | **Everyone opens at least one PR, someone else reviews it** | All | Even a trivial docs change. The goal is visible PR → review → approve → merge history with different people as author, reviewer, and merger. The JUNE10DO tasks are designed for exactly this. |
+
+### Timeline: What IQT Sees Before vs. After
+
+| Artifact | Before (Today) | After (Post-Sprint) |
+|----------|---------------|---------------------|
+| `git shortlog -sn` | 1 name, 100% | 8+ names, proportional distribution |
+| PR list | Empty (direct pushes) | 29+ merged PRs from 8 authors |
+| Code review threads | None | Review comments from different people on each PR |
+| GitHub teams | Possibly empty | 9 teams with visible members |
+| Branch protection | Off | On — requires PR + review + CI pass |
+| Contributor graph | 1 green tile | 8 overlapping green tiles |
+| `AUTHORS.md` | Doesn't exist | Full team roster with roles |
+| Commit verification | Unknown | All commits GPG/SSH signed |
+| Org profile | Unknown | Complete with mission, team, repos |
+
+### IQT-Specific Narrative
+
+When the due diligence call happens, the story is:
+
+1. **Team structure matches CODEOWNERS** — every subsystem has a named owner with domain expertise visible in their commit history
+2. **Engineering process is real** — branch protection, PR reviews, signed commits, CI gating on every merge
+3. **Not a solo founder** — 8 distinct people have contributed, reviewed, and merged code across hardware (FPGA), embedded (ARM), ML (PyTorch), autonomy (drone control), QA, DevOps, docs, and security
+4. **Production discipline** — the JUNE10DO tasks close real gaps (synthesis numbers, HIL pens, adversarial robustness, ONNX export, secure boot integration) — not cosmetic changes
+5. **Multi-repo consistency** — the same multi-author pattern exists across all Enotrium repos, not just the flagship FPGA repo
+
+### Verification Script
+
+Run this after the sprint to confirm IQT-readiness:
+
+```bash
+# Multi-author commit count
+git shortlog -sn
+
+# PR merge count by author
+git log --merges --format='%an' | sort | uniq -c | sort -rn
+
+# Signed commit ratio
+echo "Signed: $(git log --format='%G?' | grep -c G)"
+echo "Unsigned: $(git log --format='%G?' | grep -c N)"
+
+# Files touched by each author
+git log --format='%an' --name-only | sort | uniq -c | sort -rn | head -40
+
+# Branch protection status (manual check)
+open https://github.com/Enotrium/FPGA-Event-Based-encode/settings/branches
+
+# Team membership visibility (manual check)
+open https://github.com/orgs/Enotrium/teams
+```

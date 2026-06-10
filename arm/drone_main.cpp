@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
@@ -95,12 +96,19 @@ public:
     // -----------------------------------------------------------------
     // Read flow vectors from FPGA encoder output (AXI4-Stream)
     // Returns event_count flow vectors
+    //
+    // NOTE: In the current FPGA top_level.cpp, flow_pred data is stored
+    // in internal static BRAM arrays and only debug_flow[2] is exposed
+    // via AXI4-Lite. A future enhancement should map flow_pred[] to an
+    // AXI-readable address range (e.g., s_axilite bundle=MEM_FLOW) so
+    // the ARM can read per-event flow vectors for collision prediction.
+    // Until then, this function returns dummy data.
     // -----------------------------------------------------------------
     int read_flow_vectors(std::vector<EventFlow>& events, int max_events) {
         events.clear();
 
         uint32_t event_count = read_register(REG_EVENT_COUNT);
-        if (event_count == 0 || event_count > max_events) {
+        if (event_count == 0 || event_count > static_cast<uint32_t>(max_events)) {
             return 0;
         }
 
@@ -115,10 +123,12 @@ public:
             // Reconstruct float from fixed-point (INT16.Q8 → float)
             uint32_t vx_raw = registers_[base + 0];
             uint32_t vy_raw = registers_[base + 1];
-            ev.vx = reinterpret_cast<const float&>(vx_raw);
-            ev.vy = reinterpret_cast<const float&>(vy_raw);
-            ev.x  = reinterpret_cast<const float&>(registers_[base + 2]);
-            ev.y  = reinterpret_cast<const float&>(registers_[base + 3]);
+            uint32_t x_raw  = registers_[base + 2];
+            uint32_t y_raw  = registers_[base + 3];
+            std::memcpy(&ev.vx, &vx_raw, sizeof(float));
+            std::memcpy(&ev.vy, &vy_raw, sizeof(float));
+            std::memcpy(&ev.x,  &x_raw,  sizeof(float));
+            std::memcpy(&ev.y,  &y_raw,  sizeof(float));
             ev.t  = i;  // Sequential within this batch
 
             events.push_back(ev);
@@ -204,7 +214,7 @@ void signal_handler(int sig) {
 // ---------------------------------------------------------------------------
 // Main control loop
 // ---------------------------------------------------------------------------
-int main(int argc, char** argv) {
+int main(int /*argc*/, char** /*argv*/) {
     printf("=== Event-Based Drone Collision Avoidance ===\n");
     printf("ARM Processing System — Zynq MPSoC\n\n");
 

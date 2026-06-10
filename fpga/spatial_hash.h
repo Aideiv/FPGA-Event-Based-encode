@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 #define MAX_EVENTS      4096       // Ring buffer depth
 #define K_NEIGHBORS     32         // k for k-NN graph
-#define GRID_RADIUS     0.15f      // Spatial bin width (normalized coords)
+constexpr float GRID_RADIUS = 0.15f;   // Spatial bin width (normalized coords)
 #define MAX_CELL_EVENTS 128        // Maximum events per grid cell
 #define MAX_CANDIDATES  (9 * MAX_CELL_EVENTS)  // 3×3 cells × max per cell
 

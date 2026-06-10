@@ -139,7 +139,11 @@ safety:
 
 # ---------------------------------------------------------------------------
 # Event Frame Aggregation (Bonazzi et al., CVPRW 2025)
-# Mirrors the SwiftEagle FPGA event frame pipeline
+# NOTE: This CNN-based pipeline is implemented in Python only
+# (drone/direct_action_predictor.py, drone/event_frame_aggregator.py).
+# It is NOT integrated into the FPGA HLS pipeline (top_level.cpp).
+# The FPGA fabric uses the spatial hash + encoder systolic array path.
+# These sections are kept as reference for future DPU-based integration.
 # ---------------------------------------------------------------------------
 event_frame:
   # Sensor parameters

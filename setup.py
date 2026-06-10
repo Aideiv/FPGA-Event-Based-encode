@@ -11,15 +11,17 @@ setup(
     url="https://github.com/Enotrium/FPGA-Event-Based-encode",
     packages=find_packages(),
     include_package_data=True,
-    package_data={"models": ["models/*.pth"]},
+    package_data={"models": ["models/*.pth"],
+                  "models.models": ["*.pth"]},
     install_requires=[
         "torch>=1.13.0",
-        "scipy==1.14.1",
-        "scikit-learn==1.5.0",
-        "tqdm==4.66.2",
-        "matplotlib==3.8.3",
-        "matplotlib-inline==0.1.7",
-        "opencv-python==4.9.0.80"
+        "scipy>=1.10",
+        "scikit-learn>=1.3",
+        "tqdm>=4.64",
+        "matplotlib>=3.7",
+        "matplotlib-inline>=0.1",
+        "opencv-python>=4.8",
+        "pyyaml>=6.0"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

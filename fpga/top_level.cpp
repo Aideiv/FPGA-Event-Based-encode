@@ -24,7 +24,7 @@
 // AXI4-Stream data type for event flow (synthesis only)
 // ---------------------------------------------------------------------------
 #ifndef __SIMULATION__
-typedef ap_axiu<48, 0, 0, 0> axis_event_t;
+typedef ap_axiu<48, 4, 0, 0> axis_event_t;
 #endif
 
 // ---------------------------------------------------------------------------

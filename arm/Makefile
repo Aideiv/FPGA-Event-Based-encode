@@ -45,6 +45,7 @@ INCLUDES = -I. -I$(FREERTOS_PATH)/include -I$(FREERTOS_PATH)/portable/GCC/ARM_CR
 # ---------------------------------------------------------------------------
 TARGET = drone_control
 TARGET_SIM = drone_control_sim
+TEST_TARGET = test_arm_cp
 
 # Source files (header-only for collision_predictor.h, evasion_controller.h)
 SOURCES = drone_main.cpp
@@ -55,7 +56,7 @@ OBJECTS = $(SOURCES:.cpp=.o)
 # ---------------------------------------------------------------------------
 # Build rules
 # ---------------------------------------------------------------------------
-.PHONY: all sim freertos clean
+.PHONY: all sim freertos test clean
 
 # Default: hardware target
 all: $(TARGET)
@@ -85,12 +86,21 @@ freertos: $(OBJECTS)
 	@echo "Built $(TARGET)_rtos.elf for FreeRTOS"
 
 # Compile source files
-%.o: %.cpp collision_predictor.h evasion_controller.h
+%.o: %.cpp collision_predictor.h evasion_controller.h kalman_tracker.h
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+# Unit tests (native g++ — runs on dev machine, no ARM cross-compiler needed)
+# Output: ./test_arm_cp  exit 0 = all pass, 1 = any failure
+test: $(TEST_TARGET)
+	./$(TEST_TARGET)
+
+$(TEST_TARGET): test_arm_cp.cpp collision_predictor.h evasion_controller.h kalman_tracker.h
+	g++ -std=c++17 -O0 -g -Wall -Wextra -I. -o $(TEST_TARGET) test_arm_cp.cpp
+	@echo "Built $(TEST_TARGET)"
 
 # Clean
 clean:
-	rm -f $(TARGET) $(TARGET_SIM) $(TARGET)_rtos.elf *.o
+	rm -f $(TARGET) $(TARGET_SIM) $(TARGET)_rtos.elf $(TEST_TARGET) *.o
 	@echo "Clean complete"
 
 # ---------------------------------------------------------------------------
@@ -115,7 +125,7 @@ help:
 	@echo "  make          Build binary for Zynq ARM Linux"
 	@echo "  make sim      Build simulation binary (run on desktop, no FPGA needed)"
 	@echo "  make freertos Build bare-metal binary for Zynq R5 with FreeRTOS"
-	@echo "  make clean    Remove build artifacts"
+	@echo "  make test     Build and run unit tests (native g++, no FPGA needed)"
 	@echo "  make deploy   SCP binary to Zynq board"
 	@echo "  make run      SSH into Zynq and run binary"
 	@echo ""

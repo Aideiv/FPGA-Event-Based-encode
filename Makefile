@@ -100,7 +100,7 @@ docker-build:
 	docker build -t $(IMAGE) .
 
 docker-test: docker-build
-	docker run --rm -v $(CURDIR):/repo -w /repo $(IMAGE) make test
+	docker run --rm -u $(shell id -u):$(shell id -g) -v $(CURDIR):/repo -w /repo $(IMAGE) make test
 
 # ── Install ──────────────────────────────────────────────────────────────────
 

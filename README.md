@@ -63,7 +63,7 @@ Self-contained HTML figures with SVG vector graphics, hover tooltips, zoom/pan, 
 
 ---
 
-## VecKM Normal Flow API
+## Normal Flow API
 
 The underlying normal flow estimator can also be used standalone:
 

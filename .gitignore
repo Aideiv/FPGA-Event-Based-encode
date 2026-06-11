@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
+node_modules/
 # Distribution / packaging
 .Python
 build/
@@ -162,3 +163,10 @@ cython_debug/
 #.idea/
 
 egomotion/data/
+
+# Native test/build artifacts (rebuilt by make test)
+arm/drone_control_sim
+arm/*.o
+fpga/testbench
+test/test_arm_cp
+test/test_arm_evasion

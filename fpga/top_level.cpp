@@ -19,6 +19,7 @@
 #include "encoder_systolic.h"
 #include "pwm_output.h"
 #include "aer_interface.h"
+#include "weights/encoder_weights.h"
 
 // ---------------------------------------------------------------------------
 // AXI4-Stream data type for event flow (synthesis only)
@@ -31,14 +32,14 @@ typedef ap_axiu<48, 4, 0, 0> axis_event_t;
 // Top-Level Control Registers (AXI4-Lite addressable)
 // ---------------------------------------------------------------------------
 struct control_regs_t {
-    ap_uint<1>   enable;           // Global enable (0=idle, 1=running)
-    ap_uint<1>   enable_motors;    // Motor arming (0=disarmed, 1=armed)
-    ap_uint<32>  inference_period; // Cycles between inference runs (e.g., 100000 for 1kHz)
-    velocity_t   manual_vx;        // Manual override velocity (for testing)
-    velocity_t   manual_vy;
-    velocity_t   manual_vz;
-    velocity_t   manual_yaw;
-    ap_uint<1>   manual_mode;      // 1=manual control, 0=autonomous evasion
+    ap_uint<1> enable;             // Global enable (0=idle, 1=running)
+    ap_uint<1> enable_motors;      // Motor arming (0=disarmed, 1=armed)
+    ap_uint<32> inference_period;  // Cycles between inference runs (e.g., 100000 for 1kHz)
+    velocity_t manual_vx;          // Manual override velocity (for testing)
+    velocity_t manual_vy;
+    velocity_t manual_vz;
+    velocity_t manual_yaw;
+    ap_uint<1> manual_mode;  // 1=manual control, 0=autonomous evasion
 };
 
 // ---------------------------------------------------------------------------
@@ -51,51 +52,48 @@ struct control_regs_t {
 //   motor_out       : 4-channel PWM output struct
 //   debug_flow      : Debug output: first event's (vx, vy) for monitoring
 // ---------------------------------------------------------------------------
-void collision_avoidance_top(
-    control_regs_t&    ctrl_regs,
-    aer_bus_t&         aer_bus,
-    ap_uint<64>        aer_timestamp,
-    motor_outputs_t&   motor_out,
-    enc_out_t          debug_flow[2]           // (vx, vy) of first event for debug
+void collision_avoidance_top(control_regs_t& ctrl_regs, aer_bus_t& aer_bus,
+                             ap_uint<64> aer_timestamp, motor_outputs_t& motor_out,
+                             enc_out_t debug_flow[2]  // (vx, vy) of first event for debug
 ) {
-    #pragma HLS INTERFACE s_axilite port=return bundle=CTRL
-    #pragma HLS INTERFACE s_axilite port=ctrl_regs bundle=CTRL
-    #pragma HLS INTERFACE ap_none   port=aer_timestamp
-    #pragma HLS INTERFACE ap_none   port=motor_out
-    #pragma HLS INTERFACE s_axilite port=debug_flow bundle=DEBUG
+#pragma HLS INTERFACE s_axilite port = return bundle = CTRL
+#pragma HLS INTERFACE s_axilite port = ctrl_regs bundle = CTRL
+#pragma HLS INTERFACE ap_none port = aer_timestamp
+#pragma HLS INTERFACE ap_none port = motor_out
+#pragma HLS INTERFACE s_axilite port = debug_flow bundle = DEBUG
 
     // -------------------------------------------------------------------
     // Internal state
     // -------------------------------------------------------------------
     static hls::stream<aer_event_out_t> event_fifo("event_fifo");
-    #pragma HLS STREAM variable=event_fifo depth=16
+#pragma HLS STREAM variable = event_fifo depth = 16
 
     static event_unpacked_t ring_buffer_events[RING_BUFFER_SIZE];
-    #pragma HLS BIND_STORAGE variable=ring_buffer_events type=RAM_T2P impl=BRAM
+#pragma HLS BIND_STORAGE variable = ring_buffer_events type = RAM_T2P impl = BRAM
     static ap_uint<12> rb_write_ptr = 0;
-    static ap_uint<12> rb_count = 0;
-    #pragma HLS RESET variable=rb_write_ptr
-    #pragma HLS RESET variable=rb_count
+    static event_cnt_t rb_count = 0;
+#pragma HLS RESET variable = rb_write_ptr
+#pragma HLS RESET variable = rb_count
 
     static event_packed_t spatial_hash_events[MAX_EVENTS];
-    #pragma HLS BIND_STORAGE variable=spatial_hash_events type=RAM_T2P impl=BRAM
+#pragma HLS BIND_STORAGE variable = spatial_hash_events type = RAM_T2P impl = BRAM
     static knn_output_t knn_results[MAX_EVENTS];
-    #pragma HLS BIND_STORAGE variable=knn_results type=RAM_T2P impl=BRAM
+#pragma HLS BIND_STORAGE variable = knn_results type = RAM_T2P impl = BRAM
 
     static coord_enc_t enc_events[MAX_EVENTS][3];
-    #pragma HLS BIND_STORAGE variable=enc_events type=RAM_T2P impl=BRAM
+#pragma HLS BIND_STORAGE variable = enc_events type = RAM_T2P impl = BRAM
     static enc_out_t flow_pred[MAX_EVENTS][2];
-    #pragma HLS BIND_STORAGE variable=flow_pred type=RAM_T2P impl=BRAM
+#pragma HLS BIND_STORAGE variable = flow_pred type = RAM_T2P impl = BRAM
     static enc_out_t flow_uncert[MAX_EVENTS];
 
     static encoder_weights_t enc_weights;
-    #pragma HLS BIND_STORAGE variable=enc_weights type=ROM_T2P impl=BRAM
+#pragma HLS BIND_STORAGE variable = enc_weights type = ROM_T2P impl = BRAM
     static bool weights_init = false;
     if (!weights_init) {
-        WEIGHTS_INIT:
+    WEIGHTS_INIT:
         for (int i = 0; i < 3; i++) {
             for (int d = 0; d < D_ENC; d++) {
-                #pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 enc_weights[i][d] = ENCODER_WEIGHTS[i][d];
             }
         }
@@ -116,8 +114,8 @@ void collision_avoidance_top(
     };
     static pipeline_state_t state = IDLE;
     static ap_uint<32> cycle_counter = 0;
-    #pragma HLS RESET variable=state
-    #pragma HLS RESET variable=cycle_counter
+#pragma HLS RESET variable = state
+#pragma HLS RESET variable = cycle_counter
 
     // -------------------------------------------------------------------
     // Per-cycle pipeline execution
@@ -136,10 +134,10 @@ void collision_avoidance_top(
             // Ingest events from AER camera into ring buffer
             // Done continuously; this state waits until enough events
             aer_parallel_interface(aer_bus, aer_timestamp, event_fifo);
-            
+
             // Drain FIFO into ring buffer
             while (!event_fifo.empty() && rb_count < RING_BUFFER_SIZE) {
-                #pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 aer_event_out_t aer_ev = event_fifo.read();
                 event_unpacked_t rb_ev;
                 rb_ev.x = aer_ev.x;
@@ -153,8 +151,7 @@ void collision_avoidance_top(
 
             cycle_counter++;
             // Trigger inference when buffer has enough events or timeout
-            if (rb_count >= RING_BUFFER_SIZE / 2 || 
-                cycle_counter >= ctrl_regs.inference_period) {
+            if (rb_count >= RING_BUFFER_SIZE / 2 || cycle_counter >= ctrl_regs.inference_period) {
                 state = NORMALIZE;
             }
             break;
@@ -164,7 +161,7 @@ void collision_avoidance_top(
             // Convert raw events to normalized (t, x, y) format
             // and pack into spatial_hash_events array
             {
-                ap_uint<12> count = rb_count;
+                event_cnt_t count = rb_count;
                 if (count > MAX_EVENTS) count = MAX_EVENTS;
 
                 ap_uint<12> read_ptr;
@@ -174,15 +171,15 @@ void collision_avoidance_top(
                     read_ptr = rb_write_ptr + RING_BUFFER_SIZE - count;
                 }
 
-                NORM_LOOP:
-                for (ap_uint<12> i = 0; i < count; i++) {
-                    #pragma HLS PIPELINE II=1
+            NORM_LOOP:
+                for (event_cnt_t i = 0; i < count; i++) {
+#pragma HLS PIPELINE II = 1
                     ap_uint<12> addr = (read_ptr + i) & RB_ADDR_MASK;
                     event_unpacked_t ev = ring_buffer_events[addr];
 
                     // Normalize: x/pixel_radius, y/pixel_radius, t/time_radius
                     static const coord_enc_t INV_PXL = coord_enc_t(1.0f / PXL_RADIUS);
-                    static const coord_enc_t INV_T   = coord_enc_t(1.0f / T_RADIUS);
+                    static const coord_enc_t INV_T = coord_enc_t(1.0f / T_RADIUS);
 
                     spatial_hash_events[i].x = coord_enc_t(ev.x) * INV_PXL;
                     spatial_hash_events[i].y = coord_enc_t(ev.y) * INV_PXL;
@@ -192,7 +189,7 @@ void collision_avoidance_top(
                     enc_events[i][1] = spatial_hash_events[i].x;
                     enc_events[i][2] = spatial_hash_events[i].y;
                 }
-                rb_count = count; // Update count to actual processed events
+                rb_count = count;  // Update count to actual processed events
             }
             state = KNN_GRAPH;
             break;
@@ -207,10 +204,8 @@ void collision_avoidance_top(
         // ---------------------------------------------------------------
         case ENCODE_FLOW:
             // Run LocalGeometryEncoder for per-event flow
-            local_geometry_encoder(
-                enc_events, rb_count, knn_results, 
-                enc_weights, flow_pred, flow_uncert
-            );
+            local_geometry_encoder(enc_events, rb_count, knn_results, enc_weights, flow_pred,
+                                   flow_uncert);
             state = COMPUTE_EVASION;
             break;
 
@@ -222,12 +217,12 @@ void collision_avoidance_top(
             {
                 enc_out_t sum_vx = 0;
                 enc_out_t sum_vy = 0;
-                ap_uint<12> count = rb_count;
+                event_cnt_t count = rb_count;
                 if (count == 0) count = 1;
 
-                FLOW_AGGREGATE:
-                for (ap_uint<12> i = 0; i < count; i++) {
-                    #pragma HLS PIPELINE II=1
+            FLOW_AGGREGATE:
+                for (event_cnt_t i = 0; i < count; i++) {
+#pragma HLS PIPELINE II = 1
                     sum_vx += flow_pred[i][0];
                     sum_vy += flow_pred[i][1];
                 }
@@ -243,26 +238,17 @@ void collision_avoidance_top(
                 // Generate motor outputs
                 // Evasion: move away from mean flow direction
                 // Vertical: slight altitude increase when threat detected
-                velocity_t escape_vx = -mean_vx * velocity_t(2.0);   // Opposite direction
+                velocity_t escape_vx = -mean_vx * velocity_t(2.0);  // Opposite direction
                 velocity_t escape_vy = -mean_vy * velocity_t(2.0);
-                velocity_t escape_vz = velocity_t(0.3);              // Slight climb
-                velocity_t escape_yaw = velocity_t(0.0);             // No yaw
+                velocity_t escape_vz = velocity_t(0.3);   // Slight climb
+                velocity_t escape_yaw = velocity_t(0.0);  // No yaw
 
                 if (ctrl_regs.manual_mode) {
-                    pwm_output(
-                        ctrl_regs.manual_vx,
-                        ctrl_regs.manual_vy,
-                        ctrl_regs.manual_vz,
-                        ctrl_regs.manual_yaw,
-                        ctrl_regs.enable_motors,
-                        motor_out
-                    );
+                    pwm_output(ctrl_regs.manual_vx, ctrl_regs.manual_vy, ctrl_regs.manual_vz,
+                               ctrl_regs.manual_yaw, ctrl_regs.enable_motors, motor_out);
                 } else {
-                    pwm_output(
-                        escape_vx, escape_vy, escape_vz, escape_yaw,
-                        ctrl_regs.enable_motors,
-                        motor_out
-                    );
+                    pwm_output(escape_vx, escape_vy, escape_vz, escape_yaw, ctrl_regs.enable_motors,
+                               motor_out);
                 }
             }
             state = OUTPUT_MOTORS;

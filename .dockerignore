@@ -1,0 +1,10 @@
+.git
+node_modules
+assets
+figures
+demo
+models/models/*.pth
+**/__pycache__
+*.egg-info
+build
+dist

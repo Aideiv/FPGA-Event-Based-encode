@@ -1,0 +1,5 @@
+# Single source of truth for flake8 — used by make lint, pre-commit, and CI.
+# Error-only gate: syntax errors and undefined names, not style.
+[flake8]
+select = E9,F63,F7,F82
+exclude = node_modules,build,dist,.git,__pycache__,*.egg-info

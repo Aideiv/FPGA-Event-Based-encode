@@ -1,106 +1,46 @@
-# CI/CD Pipeline — FPGA Event-Based Drone Collision Avoidance
+# CI — FPGA Event-Based Drone Collision Avoidance
+#
+# The `test` job is the required status check for branch protection
+# (ENO-11): it builds the Docker toolchain image and runs `make test`
+# (Python pipeline + golden model + ARM C++ + FPGA testbench) inside it.
+# Keep the job name stable.
 name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master]
   pull_request:
     branches: [main, master]
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Python Pipeline Tests
-  # ---------------------------------------------------------------------------
-  python-tests:
-    name: Python Pipeline Tests
+  test:
+    name: test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build toolchain image
+        uses: docker/build-push-action@v6
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip setuptools wheel
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pyyaml
-      - name: Run Python pipeline simulator tests
-        run: |
-          python test/test_fpga_simulator.py
-      - name: Run FPGA equivalence check
-        run: |
-          python test/golden_model_test.py
-      - name: Run FPGA weight conversion test
-        run: |
-          python train/convert_weights_to_fpga.py --validate-only
-      - name: Lint with flake8
-        run: |
-          pip install flake8
-          flake8 drone/ models/ train/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          context: .
+          load: true
+          tags: fpga-event-encode:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run test suite
+        run: docker run --rm -v "$PWD:/repo" -w /repo fpga-event-encode:ci make test
 
-  # ---------------------------------------------------------------------------
-  # ARM C++ Unit Tests
-  # ---------------------------------------------------------------------------
-  arm-cpp-tests:
-    name: ARM C++ Unit Tests
+  lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install build tools
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
-      - name: Build ARM simulation with g++
-        run: |
-          cd arm
-          g++ -std=c++17 -O2 -DSIMULATION -DFPGA_SIM -I. drone_main.cpp -o drone_control_sim -lpthread 2>&1 || true
-          echo "ARM simulation compile attempt complete"
-      - name: Run ARM collision predictor tests
-        run: |
-          cd arm && g++ -std=c++17 -O2 -DSIMULATION -DFPGA_SIM -I. drone_main.cpp -o drone_control_sim -lpthread 2>&1 || true
-          echo "ARM C++ tests require arm-linux-gnueabihf-g++ cross-compiler."
-          echo "Skipping execution on standard x86 runner."
-
-  # ---------------------------------------------------------------------------
-  # FPGA Testbench
-  # ---------------------------------------------------------------------------
-  fpga-testbench:
-    name: FPGA C++ Testbench
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install build tools
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
-      - name: FPGA C++ build check (Vitis HLS not available)
-        run: |
-          echo "FPGA C++ testbench requires Vitis HLS (Xilinx toolchain)."
-          echo "Install Vitis HLS 2023.1+ and run: vitis_hls -f fpga/build.tcl csim"
-          echo "Standard g++ cannot compile Vitis-specific fixed-point type conversions."
-          echo "Skipping compilation on GitHub Actions runner."
-      - name: Verify config.yaml syntax
-        run: |
-          pip install pyyaml -q
-          python -c "import yaml; c=yaml.safe_load(open('fpga/config.yaml')); print('config.yaml: OK (',len(c),'sections)')"
-
-  # ---------------------------------------------------------------------------
-  # Build Check
-  # ---------------------------------------------------------------------------
-  build-check:
-    name: Build Verification
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install build tools
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential
-      - name: Check setup.py builds
-        run: |
-          pip install --upgrade pip setuptools wheel
-          python setup.py sdist
-      - name: Check root Makefile targets
-        run: |
-          make help 2>&1 || echo "Root Makefile help displayed"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install linters
+        # clang-format pinned to match .pre-commit-config.yaml — formatting
+        # differs across major versions
+        run: pip install flake8 clang-format==18.1.8
+      - name: Lint
+        run: make lint

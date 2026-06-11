@@ -462,11 +462,15 @@ def test_complex_vs_real_equivalence():
     print(f"    Max absolute error:  {max_err:.10f}")
     print(f"    Mean absolute error: {mean_err:.10f}")
 
-    # Should be essentially zero (just floating-point roundoff)
-    if max_err < 1e-5:
+    # Should be essentially zero — but "zero" for FP32 matmuls means
+    # accumulation-order roundoff, which for 128-wide dot products of
+    # randn values reaches ~1e-5. 5e-5 keeps the check meaningful while
+    # not failing on legitimate reorder noise.
+    if max_err < 5e-5:
         print("  ✓ PASS: Complex unrolling is exact (to FP32 precision)\n")
     else:
         print("  ✗ FAIL: Unexpected error in complex unrolling\n")
+        raise AssertionError(f"complex unrolling max error {max_err:.2e} >= 5e-5")
 
     return max_err
 
@@ -555,12 +559,14 @@ if __name__ == "__main__":
     print("=" * 60)
 
     results = {}
+    failures = 0
 
     # Always run config mirror check
     try:
         test_config_mirror_consistency()
     except AssertionError as e:
         print(f"  ✗ CONFIG CHECK FAILED: {e}")
+        failures += 1
 
     test_map = {
         "knn": test_knn_equivalence,
@@ -579,11 +585,14 @@ if __name__ == "__main__":
                 import traceback
 
                 traceback.print_exc()
+                failures += 1
     else:
         fn = test_map.get(args.test)
         if fn:
             results[args.test] = fn()
 
     print("=" * 60)
-    print("  Golden model checks complete")
+    print("  Golden model checks complete"
+          + (f" — {failures} FAILED" if failures else ""))
     print("=" * 60)
+    sys.exit(1 if failures else 0)

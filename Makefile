@@ -14,10 +14,13 @@
 #   make install     : Install Python package
 #   make ci          : Run full CI pipeline locally
 #
-.PHONY: help test test-py test-arm test-fpga lint build build-arm convert clean install ci
+.PHONY: help test test-py test-arm test-fpga lint build build-arm convert clean install ci docker-build docker-test
 
 # Default Python
 PYTHON := python3
+
+# Docker toolchain image (Python 3.11 + g++-13 + CPU torch)
+IMAGE ?= fpga-event-encode:dev
 
 help:
 	@echo "FPGA Event-Based Drone Collision Avoidance"
@@ -35,6 +38,8 @@ help:
 	@echo "  make clean       Remove build artifacts"
 	@echo "  make install     Install Python package (pip install -e .)"
 	@echo "  make ci          Run full CI pipeline locally"
+	@echo "  make docker-build Build the Docker toolchain image"
+	@echo "  make docker-test  Run make test inside the Docker image"
 	@echo ""
 
 # ── Test Targets ────────────────────────────────────────────────────────────
@@ -54,11 +59,11 @@ test-py:
 test-arm:
 	@echo "=== ARM C++ Unit Tests ==="
 	cd arm && $(MAKE) sim
-	cd test && g++ -std=c++17 -I.. -I../arm -o test_arm_cp test_arm_collision_predictor.cpp -lpthread && ./test_arm_cp
+	cd test && g++ -std=c++17 -O2 -I.. -I../arm -o test_arm_cp test_arm_collision_predictor.cpp -lpthread && ./test_arm_cp
 
 test-fpga:
 	@echo "=== FPGA C++ Testbench ==="
-	cd fpga && g++ -std=c++11 -I. -D__SIMULATION__ -o testbench testbench.cpp -lm && ./testbench
+	cd fpga && g++ -std=c++11 -O2 -I. -D__SIMULATION__ -o testbench testbench.cpp -lm && ./testbench
 
 test-hil:
 	@echo "=== Hardware-in-the-Loop Simulation ==="
@@ -68,11 +73,12 @@ test-hil:
 
 lint:
 	@echo "=== flake8 ==="
-	pip install -q flake8 2>/dev/null
-	flake8 drone/ models/ train/ test/ --count --select=E9,F63,F7,F82 --show-source --statistics
+	flake8 drone/ models/ train/ test/ --count --show-source --statistics
 	@echo "=== Python syntax check ==="
 	$(PYTHON) -m py_compile setup.py
 	$(PYTHON) -m compileall -q drone/ models/ train/ test/
+	@echo "=== clang-format ==="
+	clang-format --dry-run --Werror arm/*.h arm/*.cpp fpga/*.h fpga/*.cpp test/*.cpp
 
 # ── Build Targets ────────────────────────────────────────────────────────────
 
@@ -87,6 +93,14 @@ convert:
 	$(PYTHON) train/convert_weights_to_fpga.py \
 		--input models/models/UNION.pth \
 		--output models/models/FPGA.pth
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+
+docker-build:
+	docker build -t $(IMAGE) .
+
+docker-test: docker-build
+	docker run --rm -u $(shell id -u):$(shell id -g) -v $(CURDIR):/repo -w /repo $(IMAGE) make test
 
 # ── Install ──────────────────────────────────────────────────────────────────
 

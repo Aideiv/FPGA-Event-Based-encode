@@ -18,7 +18,7 @@
 // Configuration
 // ---------------------------------------------------------------------------
 #define RING_BUFFER_SIZE 4096  // Power of 2 for efficient masking
-#define RB_ADDR_MASK     (RING_BUFFER_SIZE - 1)
+#define RB_ADDR_MASK (RING_BUFFER_SIZE - 1)
 
 // ---------------------------------------------------------------------------
 // Event type (packed: 48 bits total)
@@ -29,10 +29,10 @@ typedef ap_uint<48> event_raw_t;
 
 // Unpacked event (for internal use)
 struct event_unpacked_t {
-    ap_ufixed<16,4> x;          // Normalized x coordinate [0, 1)
-    ap_ufixed<16,4> y;          // Normalized y coordinate [0, 1)
-    ap_uint<32>     timestamp;  // Microsecond timestamp
-    ap_uint<1>      polarity;
+    ap_ufixed<16, 4> x;     // Normalized x coordinate [0, 1)
+    ap_ufixed<16, 4> y;     // Normalized y coordinate [0, 1)
+    ap_uint<32> timestamp;  // Microsecond timestamp
+    ap_uint<1> polarity;
 };
 
 // ---------------------------------------------------------------------------
@@ -51,31 +51,25 @@ struct event_unpacked_t {
 //   read_valid      : Read data valid (out, stream)
 //   read_last       : Last event in burst (out, stream)
 // ---------------------------------------------------------------------------
-void ring_buffer(
-    ap_uint<1>     aer_valid,
-    event_raw_t    aer_data,
-    ap_uint<1>     trigger_read,
-    ap_uint<12>    event_count,
-    hls::stream<event_unpacked_t>& read_data,
-    hls::stream<ap_uint<1>>&      read_valid,
-    hls::stream<ap_uint<1>>&      read_last
-) {
-    #pragma HLS INTERFACE s_axilite port=return bundle=CTRL
-    #pragma HLS INTERFACE s_axilite port=event_count bundle=CTRL
-    #pragma HLS INTERFACE ap_none  port=aer_valid
-    #pragma HLS INTERFACE ap_none  port=aer_data
-    #pragma HLS INTERFACE ap_none  port=trigger_read
-    #pragma HLS INTERFACE axis     port=read_data
-    #pragma HLS INTERFACE axis     port=read_valid
-    #pragma HLS INTERFACE axis     port=read_last
+void ring_buffer(ap_uint<1> aer_valid, event_raw_t aer_data, ap_uint<1> trigger_read,
+                 ap_uint<12> event_count, hls::stream<event_unpacked_t>& read_data,
+                 hls::stream<ap_uint<1>>& read_valid, hls::stream<ap_uint<1>>& read_last) {
+#pragma HLS INTERFACE s_axilite port = return bundle = CTRL
+#pragma HLS INTERFACE s_axilite port = event_count bundle = CTRL
+#pragma HLS INTERFACE ap_none port = aer_valid
+#pragma HLS INTERFACE ap_none port = aer_data
+#pragma HLS INTERFACE ap_none port = trigger_read
+#pragma HLS INTERFACE axis port = read_data
+#pragma HLS INTERFACE axis port = read_valid
+#pragma HLS INTERFACE axis port = read_last
 
     // Dual-port BRAM storage
     static event_unpacked_t buffer[RING_BUFFER_SIZE];
-    #pragma HLS BIND_STORAGE variable=buffer type=RAM_T2P impl=BRAM
-    #pragma HLS ARRAY_PARTITION variable=buffer cyclic factor=4 dim=1
+#pragma HLS BIND_STORAGE variable = buffer type = RAM_T2P impl = BRAM
+#pragma HLS ARRAY_PARTITION variable = buffer cyclic factor = 4 dim = 1
 
     static ap_uint<12> write_ptr = 0;
-    #pragma HLS RESET variable=write_ptr
+#pragma HLS RESET variable = write_ptr
 
     // -----------------------------------------------------------------------
     // Write port (continuous AER event ingestion)
@@ -83,10 +77,10 @@ void ring_buffer(
     if (aer_valid) {
         // Unpack raw event
         event_unpacked_t ev;
-        ev.x        = ap_ufixed<16,4>(aer_data(13, 0))  / ap_ufixed<16,4>(16384.0);
-        ev.y        = ap_ufixed<16,4>(aer_data(29, 16)) / ap_ufixed<16,4>(16384.0);
+        ev.x = ap_ufixed<16, 4>(aer_data(13, 0)) / ap_ufixed<16, 4>(16384.0);
+        ev.y = ap_ufixed<16, 4>(aer_data(29, 16)) / ap_ufixed<16, 4>(16384.0);
         ev.timestamp = ap_uint<32>(aer_data(47, 16));
-        ev.polarity  = aer_data(2, 2);
+        ev.polarity = aer_data(2, 2);
 
         buffer[write_ptr & RB_ADDR_MASK] = ev;
         write_ptr++;
@@ -107,9 +101,9 @@ void ring_buffer(
             read_ptr = write_ptr + RING_BUFFER_SIZE - count;
         }
 
-        BURST_READ:
+    BURST_READ:
         for (ap_uint<12> i = 0; i < count; i++) {
-            #pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             ap_uint<12> addr = (read_ptr + i) & RB_ADDR_MASK;
             read_data.write(buffer[addr]);
             read_valid.write(1);

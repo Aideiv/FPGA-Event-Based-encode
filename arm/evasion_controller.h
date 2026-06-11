@@ -28,22 +28,22 @@ namespace drone {
 // -------------------------------------------------------------------------
 // Evasion level enumeration
 // -------------------------------------------------------------------------
-enum class EvasionLevel {
-    NONE = 0,
-    CAUTION = 1,
-    WARNING = 2,
-    CRITICAL = 3,
-    EMERGENCY = 4
-};
+enum class EvasionLevel { NONE = 0, CAUTION = 1, WARNING = 2, CRITICAL = 3, EMERGENCY = 4 };
 
 inline const char* evasion_level_name(EvasionLevel lvl) {
     switch (lvl) {
-        case EvasionLevel::NONE:      return "NONE";
-        case EvasionLevel::CAUTION:   return "CAUTION";
-        case EvasionLevel::WARNING:   return "WARNING";
-        case EvasionLevel::CRITICAL:  return "CRITICAL";
-        case EvasionLevel::EMERGENCY: return "EMERGENCY";
-        default: return "UNKNOWN";
+        case EvasionLevel::NONE:
+            return "NONE";
+        case EvasionLevel::CAUTION:
+            return "CAUTION";
+        case EvasionLevel::WARNING:
+            return "WARNING";
+        case EvasionLevel::CRITICAL:
+            return "CRITICAL";
+        case EvasionLevel::EMERGENCY:
+            return "EMERGENCY";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -51,10 +51,10 @@ inline const char* evasion_level_name(EvasionLevel lvl) {
 // Evasion command output
 // -------------------------------------------------------------------------
 struct EvasionCommand {
-    float velocity_x;       // Forward/backward velocity (m/s)
-    float velocity_y;       // Left/right velocity (m/s)
-    float velocity_z;       // Up/down velocity (m/s)
-    float yaw_rate;         // Yaw angular rate (rad/s)
+    float velocity_x;  // Forward/backward velocity (m/s)
+    float velocity_y;  // Left/right velocity (m/s)
+    float velocity_z;  // Up/down velocity (m/s)
+    float yaw_rate;    // Yaw angular rate (rad/s)
     EvasionLevel level;
     std::string description;
 };
@@ -68,21 +68,21 @@ struct EvasionCommand {
 //   - Graded response with hysteresis
 // -------------------------------------------------------------------------
 class EvasionController {
-public:
+   public:
     struct Config {
         // Velocity limits (m/s or rad/s)
         float max_horizontal_velocity = 5.0f;
         float max_vertical_velocity = 3.0f;
-        float max_yaw_rate = 3.0f;          // rad/s (~172°/s)
+        float max_yaw_rate = 3.0f;  // rad/s (~172°/s)
 
         // Threat repulsion parameters
-        float repulsion_strength = 1.0f;     // Potential field strength
-        float repulsion_decay = 2.0f;        // Distance decay exponent
-        float safety_distance = 2.0f;        // Meters — max repulsion range
+        float repulsion_strength = 1.0f;  // Potential field strength
+        float repulsion_decay = 2.0f;     // Distance decay exponent
+        float safety_distance = 2.0f;     // Meters — max repulsion range
 
         // Safe bearing attraction
-        float attraction_strength = 0.5f;    // How strongly to seek safe bearing
-        float lateral_gain = 0.7f;           // Lateral vs longitudinal evasion ratio
+        float attraction_strength = 0.5f;  // How strongly to seek safe bearing
+        float lateral_gain = 0.7f;         // Lateral vs longitudinal evasion ratio
 
         // Vertical evasion
         float vertical_evasion_speed = 1.5f;  // Climb rate during evasion (m/s)
@@ -93,13 +93,12 @@ public:
         uint32_t caution_to_none_cycles = 10;
 
         // Minimum velocity for output
-        float deadband = 0.05f;             // Output velocity deadband
+        float deadband = 0.05f;  // Output velocity deadband
     };
 
-    EvasionController() : cfg_(), current_level_(EvasionLevel::NONE), 
-                          level_persistence_(0) {}
-    explicit EvasionController(const Config& cfg) : cfg_(cfg), 
-                          current_level_(EvasionLevel::NONE), level_persistence_(0) {}
+    EvasionController() : cfg_(), current_level_(EvasionLevel::NONE), level_persistence_(0) {}
+    explicit EvasionController(const Config& cfg)
+        : cfg_(cfg), current_level_(EvasionLevel::NONE), level_persistence_(0) {}
 
     // ------------------------------------------------------------------
     // Compute evasion command from threat assessment
@@ -138,10 +137,9 @@ public:
                 if (bearing_diff > M_PI) bearing_diff -= 2.0f * M_PI;
                 if (bearing_diff < -M_PI) bearing_diff += 2.0f * M_PI;
 
-                cmd.yaw_rate = std::copysign(
-                    std::min(std::abs(bearing_diff) * 0.5f, cfg_.max_yaw_rate * 0.3f),
-                    bearing_diff
-                );
+                cmd.yaw_rate =
+                    std::copysign(std::min(std::abs(bearing_diff) * 0.5f, cfg_.max_yaw_rate * 0.3f),
+                                  bearing_diff);
                 cmd.velocity_x = cfg_.max_horizontal_velocity * 0.2f;  // Slow forward
                 cmd.description = "CAUTION: orienting toward safe bearing";
                 break;
@@ -161,8 +159,8 @@ public:
                 float rep_y = -obj_y / dist;
 
                 // Repulsion magnitude inversely proportional to distance
-                float rep_mag = cfg_.repulsion_strength * 
-                    std::pow(1.0f / (dist + 0.1f), cfg_.repulsion_decay);
+                float rep_mag =
+                    cfg_.repulsion_strength * std::pow(1.0f / (dist + 0.1f), cfg_.repulsion_decay);
                 rep_mag = std::min(rep_mag, cfg_.max_horizontal_velocity * 0.5f);
 
                 cmd.velocity_x = rep_x * rep_mag;
@@ -201,8 +199,7 @@ public:
                     sum_rep_y += rep_y * weight;
                 }
 
-                float total_mag = std::sqrt(sum_rep_x * sum_rep_x + 
-                                           sum_rep_y * sum_rep_y + 1e-6f);
+                float total_mag = std::sqrt(sum_rep_x * sum_rep_x + sum_rep_y * sum_rep_y + 1e-6f);
                 float rep_mag = cfg_.max_horizontal_velocity * 0.7f;
 
                 cmd.velocity_x = (sum_rep_x / total_mag) * rep_mag;
@@ -251,7 +248,7 @@ public:
         return cmd;
     }
 
-private:
+   private:
     Config cfg_;
     EvasionLevel current_level_;
     uint32_t level_persistence_;
@@ -260,10 +257,10 @@ private:
     // Map urgency value [0, 1] to evasion level
     // ------------------------------------------------------------------
     static EvasionLevel determine_level(float urgency) {
-        if (urgency < 0.1f)  return EvasionLevel::NONE;
-        if (urgency < 0.3f)  return EvasionLevel::CAUTION;
-        if (urgency < 0.5f)  return EvasionLevel::WARNING;
-        if (urgency < 0.7f)  return EvasionLevel::CRITICAL;
+        if (urgency < 0.1f) return EvasionLevel::NONE;
+        if (urgency < 0.3f) return EvasionLevel::CAUTION;
+        if (urgency < 0.5f) return EvasionLevel::WARNING;
+        if (urgency < 0.7f) return EvasionLevel::CRITICAL;
         return EvasionLevel::EMERGENCY;
     }
 
@@ -301,10 +298,14 @@ private:
 
         // Check if persistence threshold met for this downgrade
         uint32_t required_cycles = 0;
-        if (target_int == 0)      required_cycles = cfg_.caution_to_none_cycles;
-        else if (target_int == 1) required_cycles = cfg_.warning_to_caution_cycles;
-        else if (target_int == 2) required_cycles = cfg_.critical_to_warning_cycles;
-        else if (target_int == 3) required_cycles = 1;  // EMERGENCY→CRITICAL: 1 cycle
+        if (target_int == 0)
+            required_cycles = cfg_.caution_to_none_cycles;
+        else if (target_int == 1)
+            required_cycles = cfg_.warning_to_caution_cycles;
+        else if (target_int == 2)
+            required_cycles = cfg_.critical_to_warning_cycles;
+        else if (target_int == 3)
+            required_cycles = 1;  // EMERGENCY→CRITICAL: 1 cycle
 
         if (level_persistence_ >= required_cycles) {
             level_persistence_ = 0;
@@ -317,9 +318,7 @@ private:
     // ------------------------------------------------------------------
     // Find object with highest collision urgency
     // ------------------------------------------------------------------
-    static const ObjectCluster& find_most_urgent(
-        const std::vector<ObjectCluster>& objects) 
-    {
+    static const ObjectCluster& find_most_urgent(const std::vector<ObjectCluster>& objects) {
         const ObjectCluster* worst = &objects[0];
         for (const auto& obj : objects) {
             if (obj.collision_urgency > worst->collision_urgency) {
@@ -330,4 +329,4 @@ private:
     }
 };
 
-} // namespace drone
+}  // namespace drone

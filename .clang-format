@@ -1,0 +1,5 @@
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 100
+# HLS headers are order-dependent (spatial_hash.h defines types encoder_systolic.h uses)
+SortIncludes: Never

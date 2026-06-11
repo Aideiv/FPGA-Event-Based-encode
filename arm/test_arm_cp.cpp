@@ -23,81 +23,97 @@ using namespace drone;
 // ---------------------------------------------------------------------------
 // Minimal test framework (no external dependencies)
 // ---------------------------------------------------------------------------
-static int g_total  = 0;
+static int g_total = 0;
 static int g_passed = 0;
 static bool g_test_failed = false;
 static const char* g_test_name = "";
 
-#define RUN_TEST(name) \
-    do { g_test_name = #name; g_test_failed = false; g_total++; \
-         printf("  [ RUN  ] %s\n", g_test_name); } while(0)
+#define RUN_TEST(name)                          \
+    do {                                        \
+        g_test_name = #name;                    \
+        g_test_failed = false;                  \
+        g_total++;                              \
+        printf("  [ RUN  ] %s\n", g_test_name); \
+    } while (0)
 
-#define END_TEST \
-    do { if (!g_test_failed) { \
-             printf("  [ PASS ] %s\n\n", g_test_name); g_passed++; \
-         } else { \
-             printf("  [ FAIL ] %s\n\n", g_test_name); } } while(0)
+#define END_TEST                                      \
+    do {                                              \
+        if (!g_test_failed) {                         \
+            printf("  [ PASS ] %s\n\n", g_test_name); \
+            g_passed++;                               \
+        } else {                                      \
+            printf("  [ FAIL ] %s\n\n", g_test_name); \
+        }                                             \
+    } while (0)
 
-#define EXPECT_EQ(a, b) \
-    do { if ((a) != (b)) { \
-        printf("    EXPECT_EQ failed %s:%d\n      left:  %s = %d\n      right: %s = %d\n", \
-               __FILE__, __LINE__, #a, (int)(a), #b, (int)(b)); \
-        g_test_failed = true; } } while(0)
+#define EXPECT_EQ(a, b)                                                                        \
+    do {                                                                                       \
+        if ((a) != (b)) {                                                                      \
+            printf("    EXPECT_EQ failed %s:%d\n      left:  %s = %d\n      right: %s = %d\n", \
+                   __FILE__, __LINE__, #a, (int)(a), #b, (int)(b));                            \
+            g_test_failed = true;                                                              \
+        }                                                                                      \
+    } while (0)
 
-#define EXPECT_TRUE(cond) \
-    do { if (!(cond)) { \
-        printf("    EXPECT_TRUE failed %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        g_test_failed = true; } } while(0)
+#define EXPECT_TRUE(cond)                                                            \
+    do {                                                                             \
+        if (!(cond)) {                                                               \
+            printf("    EXPECT_TRUE failed %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+            g_test_failed = true;                                                    \
+        }                                                                            \
+    } while (0)
 
-#define EXPECT_FALSE(cond) \
-    do { if ((cond)) { \
-        printf("    EXPECT_FALSE failed %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        g_test_failed = true; } } while(0)
+#define EXPECT_FALSE(cond)                                                            \
+    do {                                                                              \
+        if ((cond)) {                                                                 \
+            printf("    EXPECT_FALSE failed %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+            g_test_failed = true;                                                     \
+        }                                                                             \
+    } while (0)
 
-#define EXPECT_NEAR(a, b, tol) \
-    do { float _diff = std::abs((float)(a) - (float)(b)); \
-         if (_diff > (float)(tol)) { \
-        printf("    EXPECT_NEAR failed %s:%d\n      |%s - %s| = %.5f > %.5f\n", \
-               __FILE__, __LINE__, #a, #b, _diff, (float)(tol)); \
-        g_test_failed = true; } } while(0)
+#define EXPECT_NEAR(a, b, tol)                                                                \
+    do {                                                                                      \
+        float _diff = std::abs((float)(a) - (float)(b));                                      \
+        if (_diff > (float)(tol)) {                                                           \
+            printf("    EXPECT_NEAR failed %s:%d\n      |%s - %s| = %.5f > %.5f\n", __FILE__, \
+                   __LINE__, #a, #b, _diff, (float)(tol));                                    \
+            g_test_failed = true;                                                             \
+        }                                                                                     \
+    } while (0)
 
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 
 // Build a minimal ObjectCluster at (cx, cy) with realistic defaults
-static ObjectCluster make_cluster(float cx, float cy,
-                                  float urgency = 0.8f, float ttc = 0.5f) {
+static ObjectCluster make_cluster(float cx, float cy, float urgency = 0.8f, float ttc = 0.5f) {
     ObjectCluster c{};
-    c.id              = 0;
-    c.center_x        = cx;
-    c.center_y        = cy;
-    c.spatial_extent  = 0.05f;
-    c.mean_flow_mag   = 1.0f;
-    c.mean_flow_dir   = 0.0f;
-    c.ttc             = ttc;
+    c.id = 0;
+    c.center_x = cx;
+    c.center_y = cy;
+    c.spatial_extent = 0.05f;
+    c.mean_flow_mag = 1.0f;
+    c.mean_flow_dir = 0.0f;
+    c.ttc = ttc;
     c.collision_urgency = urgency;
-    c.event_count     = 50;
+    c.event_count = 50;
     return c;
 }
 
 // Replicate drone_main.cpp Step 2b exactly.
 // Returns a ThreatAssessment post-tracker: objects replaced with KF-filtered
 // confirmed tracks, threat_detected recomputed from confirmed track count.
-static ThreatAssessment run_integration_step(
-    KalmanTracker& tracker,
-    std::vector<TrackedObject>& tracks,
-    std::vector<ObjectCluster> raw_objects,
-    bool raw_threat = true)
-{
+static ThreatAssessment run_integration_step(KalmanTracker& tracker,
+                                             std::vector<TrackedObject>& tracks,
+                                             std::vector<ObjectCluster> raw_objects,
+                                             bool raw_threat = true) {
     ThreatAssessment assessment;
-    assessment.objects            = raw_objects;
-    assessment.threat_detected    = raw_threat;
-    assessment.max_urgency        = raw_threat ? 0.8f : 0.0f;
-    assessment.safe_bearing       = 0.0f;
+    assessment.objects = raw_objects;
+    assessment.threat_detected = raw_threat;
+    assessment.max_urgency = raw_threat ? 0.8f : 0.0f;
+    assessment.safe_bearing = 0.0f;
     assessment.safe_bearing_confidence = 1.0f;
-    assessment.time_to_first_collision =
-        raw_threat ? 0.5f : std::numeric_limits<float>::max();
+    assessment.time_to_first_collision = raw_threat ? 0.5f : std::numeric_limits<float>::max();
 
     // --- drone_main.cpp Step 2b (verbatim) ---
     tracker.update(assessment.objects, tracks);
@@ -129,7 +145,7 @@ void test_confirm_requires_3_hits() {
 
     KalmanTracker tracker;
     std::vector<TrackedObject> tracks;
-    std::vector<ObjectCluster> det = { make_cluster(0.5f, 0.5f) };
+    std::vector<ObjectCluster> det = {make_cluster(0.5f, 0.5f)};
 
     // Frame 1 — age=1, below threshold (< 3)
     tracker.update(det, tracks);
@@ -164,7 +180,7 @@ void test_track_pruned_after_max_age() {
 
     KalmanTracker tracker;
     std::vector<TrackedObject> tracks;
-    std::vector<ObjectCluster> det   = { make_cluster(0.5f, 0.5f) };
+    std::vector<ObjectCluster> det = {make_cluster(0.5f, 0.5f)};
     std::vector<ObjectCluster> empty = {};
 
     // Confirm the track (3 hits, frames_since_update reset to 0 on last match)
@@ -231,11 +247,9 @@ void test_two_objects_two_tracks() {
     auto conf = tracker.get_confirmed_tracks(tracks);
     bool found_near_01 = false, found_near_09 = false;
     for (const auto& t : conf) {
-        if (std::abs(t.kf_state.x - 0.1f) < 0.05f &&
-            std::abs(t.kf_state.y - 0.1f) < 0.05f)
+        if (std::abs(t.kf_state.x - 0.1f) < 0.05f && std::abs(t.kf_state.y - 0.1f) < 0.05f)
             found_near_01 = true;
-        if (std::abs(t.kf_state.x - 0.9f) < 0.05f &&
-            std::abs(t.kf_state.y - 0.9f) < 0.05f)
+        if (std::abs(t.kf_state.x - 0.9f) < 0.05f && std::abs(t.kf_state.y - 0.9f) < 0.05f)
             found_near_09 = true;
     }
     EXPECT_TRUE(found_near_01);
@@ -258,13 +272,12 @@ void test_kalman_smoothing() {
     KalmanTracker tracker;
     std::vector<TrackedObject> tracks;
     const float true_pos = 0.5f;
-    const float noise    = 0.04f;
+    const float noise = 0.04f;
 
     for (int i = 0; i < 30; i++) {
         float sign = (i % 2 == 0) ? 1.0f : -1.0f;
         std::vector<ObjectCluster> det = {
-            make_cluster(true_pos + sign * noise, true_pos + sign * noise)
-        };
+            make_cluster(true_pos + sign * noise, true_pos + sign * noise)};
         tracker.update(det, tracks);
     }
 
@@ -300,7 +313,7 @@ void test_integration_threat_gate() {
 
     KalmanTracker tracker;
     std::vector<TrackedObject> tracks;
-    std::vector<ObjectCluster> det   = { make_cluster(0.5f, 0.5f, 0.8f) };
+    std::vector<ObjectCluster> det = {make_cluster(0.5f, 0.5f, 0.8f)};
     std::vector<ObjectCluster> empty = {};
 
     // Frames 1 and 2: raw threat, but evader must not see it yet

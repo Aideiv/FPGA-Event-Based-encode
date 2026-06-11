@@ -43,21 +43,21 @@
 // FPGA AXI Register Map (AXI4-Lite base addresses)
 // These map to the control_regs_t struct in fpga/top_level.cpp
 // ---------------------------------------------------------------------------
-#define FPGA_BASE_ADDR         0x43C00000  // Example AXI address
-#define REG_ENABLE             (FPGA_BASE_ADDR + 0x00)
-#define REG_ENABLE_MOTORS      (FPGA_BASE_ADDR + 0x04)
-#define REG_INFERENCE_PERIOD   (FPGA_BASE_ADDR + 0x08)
-#define REG_MANUAL_VX          (FPGA_BASE_ADDR + 0x0C)
-#define REG_MANUAL_VY          (FPGA_BASE_ADDR + 0x10)
-#define REG_MANUAL_VZ          (FPGA_BASE_ADDR + 0x14)
-#define REG_MANUAL_YAW         (FPGA_BASE_ADDR + 0x18)
-#define REG_MANUAL_MODE        (FPGA_BASE_ADDR + 0x1C)
-#define REG_EVENT_COUNT        (FPGA_BASE_ADDR + 0x20)
-#define REG_FLOW_PRED_BASE     (FPGA_BASE_ADDR + 0x100)  // Flow data from encoder
+#define FPGA_BASE_ADDR 0x43C00000  // Example AXI address
+#define REG_ENABLE (FPGA_BASE_ADDR + 0x00)
+#define REG_ENABLE_MOTORS (FPGA_BASE_ADDR + 0x04)
+#define REG_INFERENCE_PERIOD (FPGA_BASE_ADDR + 0x08)
+#define REG_MANUAL_VX (FPGA_BASE_ADDR + 0x0C)
+#define REG_MANUAL_VY (FPGA_BASE_ADDR + 0x10)
+#define REG_MANUAL_VZ (FPGA_BASE_ADDR + 0x14)
+#define REG_MANUAL_YAW (FPGA_BASE_ADDR + 0x18)
+#define REG_MANUAL_MODE (FPGA_BASE_ADDR + 0x1C)
+#define REG_EVENT_COUNT (FPGA_BASE_ADDR + 0x20)
+#define REG_FLOW_PRED_BASE (FPGA_BASE_ADDR + 0x100)  // Flow data from encoder
 
 // DMA configuration for AXI4-Stream from encoder
-#define DMA_RX_BASE            0x40400000
-#define DMA_MAX_PACKET_SIZE    (4096 * 8)  // 4096 events × 8 bytes per flow vec
+#define DMA_RX_BASE 0x40400000
+#define DMA_MAX_PACKET_SIZE (4096 * 8)  // 4096 events × 8 bytes per flow vec
 
 using namespace drone;
 
@@ -72,27 +72,23 @@ static std::atomic<bool> g_motors_armed{false};
 // On actual Zynq: mmap /dev/mem → volatile pointer to FPGA AXI region
 // ---------------------------------------------------------------------------
 class FpgaInterface {
-public:
+   public:
     FpgaInterface() {
         // On real hardware: mmap FPGA AXI region
         // void* ptr = mmap(NULL, 0x10000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, FPGA_BASE_ADDR);
         // registers_ = reinterpret_cast<volatile uint32_t*>(ptr);
-        
+
         // Simulation: allocate local memory for testing
         registers_ = new volatile uint32_t[128]();
     }
 
-    ~FpgaInterface() {
-        delete[] registers_;
-    }
+    ~FpgaInterface() { delete[] registers_; }
 
     void write_register(uint32_t offset, uint32_t value) {
         registers_[(offset - FPGA_BASE_ADDR) / 4] = value;
     }
 
-    uint32_t read_register(uint32_t offset) {
-        return registers_[(offset - FPGA_BASE_ADDR) / 4];
-    }
+    uint32_t read_register(uint32_t offset) { return registers_[(offset - FPGA_BASE_ADDR) / 4]; }
 
     // -----------------------------------------------------------------
     // Read flow vectors from FPGA encoder output (AXI4-Stream)
@@ -119,18 +115,18 @@ public:
         for (uint32_t i = 0; i < event_count; ++i) {
             // Each event: 2 × 32bit for flow (vx, vy as float) + position data
             uint32_t base = (REG_FLOW_PRED_BASE - FPGA_BASE_ADDR) / 4 + i * 4;
-            
+
             EventFlow ev;
             // Reconstruct float from fixed-point (INT16.Q8 → float)
             uint32_t vx_raw = registers_[base + 0];
             uint32_t vy_raw = registers_[base + 1];
-            uint32_t x_raw  = registers_[base + 2];
-            uint32_t y_raw  = registers_[base + 3];
+            uint32_t x_raw = registers_[base + 2];
+            uint32_t y_raw = registers_[base + 3];
             std::memcpy(&ev.vx, &vx_raw, sizeof(float));
             std::memcpy(&ev.vy, &vy_raw, sizeof(float));
-            std::memcpy(&ev.x,  &x_raw,  sizeof(float));
-            std::memcpy(&ev.y,  &y_raw,  sizeof(float));
-            ev.t  = i;  // Sequential within this batch
+            std::memcpy(&ev.x, &x_raw, sizeof(float));
+            std::memcpy(&ev.y, &y_raw, sizeof(float));
+            ev.t = i;  // Sequential within this batch
 
             events.push_back(ev);
         }
@@ -156,16 +152,16 @@ public:
             return static_cast<uint32_t>(v & 0xFFFF);
         };
 
-        write_register(REG_MANUAL_VX,  clamp_int16(vx_fp));
-        write_register(REG_MANUAL_VY,  clamp_int16(vy_fp));
-        write_register(REG_MANUAL_VZ,  clamp_int16(vz_fp));
+        write_register(REG_MANUAL_VX, clamp_int16(vx_fp));
+        write_register(REG_MANUAL_VY, clamp_int16(vy_fp));
+        write_register(REG_MANUAL_VZ, clamp_int16(vz_fp));
         write_register(REG_MANUAL_YAW, clamp_int16(yaw_fp));
 
         // Set manual mode to feed computed commands to PWM
         write_register(REG_MANUAL_MODE, 1);
     }
 
-    void enable( bool motors) {
+    void enable(bool motors) {
         write_register(REG_ENABLE, 1);
         write_register(REG_ENABLE_MOTORS, motors ? 1 : 0);
         write_register(REG_INFERENCE_PERIOD, 100000);  // 1kHz inference trigger
@@ -176,34 +172,31 @@ public:
         write_register(REG_ENABLE_MOTORS, 0);
     }
 
-private:
+   private:
     volatile uint32_t* registers_;
 };
 
 // ---------------------------------------------------------------------------
 // Telemetry / logging
 // ---------------------------------------------------------------------------
-void log_telemetry(const ThreatAssessment& assess, const EvasionCommand& cmd,
-                   size_t n_tracks, size_t n_confirmed) {
+void log_telemetry(const ThreatAssessment& assess, const EvasionCommand& cmd, size_t n_tracks,
+                   size_t n_confirmed) {
     static uint32_t frame = 0;
     frame++;
 
     printf("[%06u] ", frame);
 
     if (assess.threat_detected) {
-        printf("THREAT ur=%.2f safe=%.2f° obj=%zu ttc=%.2fs | ",
-               assess.max_urgency,
-               assess.safe_bearing * 180.0f / M_PI,
-               assess.objects.size(),
+        printf("THREAT ur=%.2f safe=%.2f° obj=%zu ttc=%.2fs | ", assess.max_urgency,
+               assess.safe_bearing * 180.0f / M_PI, assess.objects.size(),
                assess.time_to_first_collision);
     } else {
         printf("CLEAR                               | ");
     }
 
     printf("%-9s vx=%+5.2f vy=%+5.2f vz=%+5.2f yaw=%+5.2f | trk=%zu conf=%zu\n",
-           evasion_level_name(cmd.level),
-           cmd.velocity_x, cmd.velocity_y, cmd.velocity_z, cmd.yaw_rate,
-           n_tracks, n_confirmed);
+           evasion_level_name(cmd.level), cmd.velocity_x, cmd.velocity_y, cmd.velocity_z,
+           cmd.yaw_rate, n_tracks, n_confirmed);
 }
 
 // ---------------------------------------------------------------------------

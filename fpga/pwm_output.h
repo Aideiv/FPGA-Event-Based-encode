@@ -33,7 +33,9 @@
 // Fixed-point types
 typedef ap_fixed<16,4>  velocity_t;   // Velocity: [-8.0, 8.0] m/s equivalent
 typedef ap_ufixed<16,12> thrust_t;    // Thrust: [0.0, 1.0]
-typedef ap_uint<16>     pwm_tick_t;   // PWM pulse width in clock ticks
+// 18 bits: must hold PWM_MAX_TICKS = 200,000 (2ms @ 100MHz). 16 bits
+// truncated every pulse width mod 65536, including the disarmed minimum.
+typedef ap_uint<18>     pwm_tick_t;   // PWM pulse width in clock ticks
 typedef ap_uint<12>     dshot_cmd_t;  // DShot throttle command (11-bit)
 
 // ---------------------------------------------------------------------------

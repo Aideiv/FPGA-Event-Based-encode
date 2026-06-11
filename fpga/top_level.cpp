@@ -19,6 +19,7 @@
 #include "encoder_systolic.h"
 #include "pwm_output.h"
 #include "aer_interface.h"
+#include "weights/encoder_weights.h"
 
 // ---------------------------------------------------------------------------
 // AXI4-Stream data type for event flow (synthesis only)
@@ -73,7 +74,7 @@ void collision_avoidance_top(
     static event_unpacked_t ring_buffer_events[RING_BUFFER_SIZE];
     #pragma HLS BIND_STORAGE variable=ring_buffer_events type=RAM_T2P impl=BRAM
     static ap_uint<12> rb_write_ptr = 0;
-    static ap_uint<12> rb_count = 0;
+    static event_cnt_t rb_count = 0;
     #pragma HLS RESET variable=rb_write_ptr
     #pragma HLS RESET variable=rb_count
 
@@ -164,7 +165,7 @@ void collision_avoidance_top(
             // Convert raw events to normalized (t, x, y) format
             // and pack into spatial_hash_events array
             {
-                ap_uint<12> count = rb_count;
+                event_cnt_t count = rb_count;
                 if (count > MAX_EVENTS) count = MAX_EVENTS;
 
                 ap_uint<12> read_ptr;
@@ -175,7 +176,7 @@ void collision_avoidance_top(
                 }
 
                 NORM_LOOP:
-                for (ap_uint<12> i = 0; i < count; i++) {
+                for (event_cnt_t i = 0; i < count; i++) {
                     #pragma HLS PIPELINE II=1
                     ap_uint<12> addr = (read_ptr + i) & RB_ADDR_MASK;
                     event_unpacked_t ev = ring_buffer_events[addr];
@@ -222,11 +223,11 @@ void collision_avoidance_top(
             {
                 enc_out_t sum_vx = 0;
                 enc_out_t sum_vy = 0;
-                ap_uint<12> count = rb_count;
+                event_cnt_t count = rb_count;
                 if (count == 0) count = 1;
 
                 FLOW_AGGREGATE:
-                for (ap_uint<12> i = 0; i < count; i++) {
+                for (event_cnt_t i = 0; i < count; i++) {
                     #pragma HLS PIPELINE II=1
                     sum_vx += flow_pred[i][0];
                     sum_vy += flow_pred[i][1];

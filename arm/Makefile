@@ -66,6 +66,9 @@ $(TARGET): $(OBJECTS)
 	@echo "Built $@ for Zynq ARM (hardware mode)"
 
 # Simulation target (no FPGA hardware needed)
+# Override CXX too: objects must be compiled with the same native g++ the
+# sim link rule uses, not the ARM cross-compiler default.
+sim: CXX = g++
 sim: CXXFLAGS = $(CXXFLAGS_COMMON) $(RELEASE_FLAGS) $(SIM_FLAGS)
 sim: $(TARGET_SIM)
 

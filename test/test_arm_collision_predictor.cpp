@@ -27,8 +27,8 @@ static int g_passed = 0;
 static int g_failed = 0;
 
 #define TEST(name) printf("  TEST: %-50s ", name); fflush(stdout)
-#define CHECK(cond, msg) do { \
-    if (!(cond)) { printf("FAIL: %s\n", msg); g_failed++; } \
+#define CHECK(cond, ...) do { \
+    if (!(cond)) { printf("FAIL: "); printf(__VA_ARGS__); printf("\n"); g_failed++; } \
     else { printf("PASS\n"); g_passed++; } \
 } while(0)
 
@@ -376,18 +376,18 @@ void test_evasion_hysteresis() {
     TEST("Step 1: High threat → EMERGENCY");
     CHECK(cmd1.level == EvasionLevel::EMERGENCY, "expected EMERGENCY");
     
-    // Step 2: Immediate low threat should NOT downgrade (hysteresis)
+    // Step 2: Immediate low threat downgrades at most ONE level per cycle
+    // (documented contract: "EMERGENCY → CRITICAL, never jump to NONE")
     auto cmd2 = controller.compute_command(low_threat);
-    TEST("Step 2: Hysteresis maintains EMERGENCY");
-    CHECK(cmd2.level == EvasionLevel::EMERGENCY, 
-          "hysteresis should maintain EMERGENCY: got %s", evasion_level_name(cmd2.level));
+    TEST("Step 2: Hysteresis limits downgrade to one step");
+    CHECK(cmd2.level == EvasionLevel::CRITICAL,
+          "hysteresis should step down to CRITICAL: got %s", evasion_level_name(cmd2.level));
     
     // Step 3: Sustained low threat should downgrade step by step
     auto cmd3 = controller.compute_command(low_threat);
     
     // Keep feeding low threats until we stabilize
     EvasionLevel last_level = EvasionLevel::EMERGENCY;
-    int steps = 0;
     std::vector<EvasionLevel> levels;
     levels.push_back(last_level);
     

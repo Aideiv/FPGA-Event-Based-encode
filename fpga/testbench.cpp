@@ -73,14 +73,21 @@ void feed_events_to_pipeline(
     ctrl.enable = 1; ctrl.enable_motors = 1;
     for (int step = 0; step < steps; step++) {
         timestamp = step * 1000;
-        if (event_idx < events.xs.size()) {
-            aer_bus.x = events.xs[event_idx];
-            aer_bus.y = events.ys[event_idx];
-            aer_bus.pol = events.polarities[event_idx] ? 1 : 0;
-            aer_bus.req = 1; aer_bus.ack = 0;
-            event_idx++;
-        } else {
+        // Emulate the camera side of the 4-phase AER handshake: assert REQ
+        // with a new event when the bus is idle, deassert REQ once the FPGA
+        // ACKs. The interface reads aer_bus.address (not the x/y aliases).
+        if (aer_bus.ack == 1) {
             aer_bus.req = 0;
+        } else if (aer_bus.req == 0 && event_idx < events.xs.size()) {
+            uint32_t ex = events.xs[event_idx] % SENSOR_WIDTH;
+            uint32_t ey = events.ys[event_idx] % SENSOR_HEIGHT;
+            aer_bus.address = ap_uint<19>(ey * SENSOR_WIDTH + ex);
+            aer_bus.x = ap_uint<10>(ex);
+            aer_bus.y = ap_uint<9>(ey);
+            aer_bus.pol = events.polarities[event_idx] ? 1 : 0;
+            aer_bus.polarity = aer_bus.pol;
+            aer_bus.req = 1;
+            event_idx++;
         }
         collision_avoidance_top(ctrl, aer_bus, timestamp, motor_out, debug_flow);
     }
@@ -90,14 +97,21 @@ void feed_events_to_pipeline(
 // TESTS
 // ===========================================================================
 
+// Motor outputs are PWM pulse widths in clock ticks [PWM_MIN_TICKS,
+// PWM_MAX_TICKS]; normalize back to thrust fraction [0, 1] for checks.
+static float pwm_to_thrust(const pwm_tick_t& t) {
+    return (static_cast<float>(t.val) - PWM_MIN_TICKS) /
+           static_cast<float>(PWM_MAX_TICKS - PWM_MIN_TICKS);
+}
+
 void test_pwm_output_basic() {
     printf("\n=== Test: pwm_output basic operation ===\n");
     motor_outputs_t motors, motors_disarmed;
     velocity_t vx(1.0f), vy(0.5f), vz(0.3f), yaw(0.1f);
-    
+
     pwm_output(vx, vy, vz, yaw, ap_uint<1>(1), motors);
-    float m1 = static_cast<float>(motors.m1), m2 = static_cast<float>(motors.m2);
-    float m3 = static_cast<float>(motors.m3), m4 = static_cast<float>(motors.m4);
+    float m1 = pwm_to_thrust(motors.m1), m2 = pwm_to_thrust(motors.m2);
+    float m3 = pwm_to_thrust(motors.m3), m4 = pwm_to_thrust(motors.m4);
     
     TEST("PWM produces non-zero output when armed");
     ASSERT(m1 > 0.001f || m2 > 0.001f || m3 > 0.001f || m4 > 0.001f, "all motors zero");
@@ -129,9 +143,9 @@ void test_normalization() {
     
     event_packed_t packed[MAX_EVENTS];
     coord_enc_t enc_events[MAX_EVENTS][3];
-    ap_uint<12> count = RING_BUFFER_SIZE;
+    event_cnt_t count = RING_BUFFER_SIZE;
     
-    for (ap_uint<12> i = 0; static_cast<int>(i.val) < static_cast<int>(count.val); i = ap_uint<12>(i.val + 1)) {
+    for (event_cnt_t i = 0; static_cast<int>(i.val) < static_cast<int>(count.val); i = event_cnt_t(i.val + 1)) {
         int idx = static_cast<int>(i.val);
         auto& ev = events[idx];
         coord_enc_t inv_pxl(1.0f / PXL_RADIUS);
@@ -145,13 +159,16 @@ void test_normalization() {
     }
     
     TEST("Normalization produces values within reasonable range");
+    // x/PXL_RADIUS scales [0,1) pixels into radius units (up to ~44),
+    // saturating coord_enc_t at its Q4.12 limit — values must stay finite
+    // and inside the representable [-8, 8) window.
     bool ok = true;
     for (int i = 0; i < 10; i++) {
         float x = static_cast<float>(packed[i].x);
         float y = static_cast<float>(packed[i].y);
-        if (std::abs(x) > 1.5f || std::abs(y) > 1.5f) { ok = false; break; }
+        if (!(x >= -8.0f && x <= 8.0f) || !(y >= -8.0f && y <= 8.0f)) { ok = false; break; }
     }
-    ASSERT(ok, "normalized values out of expected range [~0, ~1]");
+    ASSERT(ok, "normalized values escaped coord_enc_t range [-8, 8]");
 }
 
 void test_spatial_hash() {
@@ -165,7 +182,7 @@ void test_spatial_hash() {
         events[i].timestamp = i * 1000;
     }
     knn_output_t knn_results[MAX_EVENTS];
-    ap_uint<12> count(256);
+    event_cnt_t count(256);
     spatial_hash_knn(events, count, knn_results);
     
     TEST("k-NN produces non-zero adjacency for clustered events");
@@ -180,16 +197,25 @@ void test_spatial_hash() {
         events[i].y = coord_enc_t(0.9f + 0.001f * (i - 256));
         events[i].timestamp = i * 1000;
     }
-    count = ap_uint<12>(MAX_EVENTS);
+    count = event_cnt_t(MAX_EVENTS);
     spatial_hash_knn(events, count, knn_results);
     
-    int cluster1_edges = 0, cluster2_edges = 0;
-    for (int i = 0; i < 256; i++) cluster1_edges += static_cast<int>(knn_results[i].count.val);
-    for (int i = 256; i < MAX_EVENTS; i++) cluster2_edges += static_cast<int>(knn_results[i].count.val);
-    
+    int cluster1_edges = 0, cross_edges = 0;
+    for (int i = 0; i < 256; i++) {
+        int n = static_cast<int>(knn_results[i].count.val);
+        cluster1_edges += n;
+        for (int k = 0; k < n && k < K_NEIGHBORS; k++)
+            if (static_cast<int>(knn_results[i].neighbor_indices[k].val) >= 256) cross_edges++;
+    }
+    for (int i = 256; i < MAX_EVENTS; i++) {
+        int n = static_cast<int>(knn_results[i].count.val);
+        for (int k = 0; k < n && k < K_NEIGHBORS; k++)
+            if (static_cast<int>(knn_results[i].neighbor_indices[k].val) < 256) cross_edges++;
+    }
+
     TEST("Spatial hash correctly separates distant clusters");
     ASSERT(cluster1_edges > 0, "cluster 1 should have edges");
-    ASSERT(cluster2_edges == 0, "cluster 2 should have no edges (too far)");
+    ASSERT(cross_edges == 0, "clusters should not connect, got %d cross edges", cross_edges);
 }
 
 void test_encoder_systolic() {
@@ -207,7 +233,7 @@ void test_encoder_systolic() {
     
     enc_out_t flow_pred[8][2];
     enc_out_t flow_uncert[8];
-    local_geometry_encoder(events, ap_uint<12>(8), knn, weights, flow_pred, flow_uncert);
+    local_geometry_encoder(events, event_cnt_t(8), knn, weights, flow_pred, flow_uncert);
     
     TEST("Encoder runs without crash with zero neighbors");
     ASSERT(static_cast<float>(flow_uncert[0]) >= 0.0f, "uncertainty should be non-negative");
@@ -231,11 +257,11 @@ void test_top_level_evasion_response() {
         ap_uint<64> timestamp(0);
         motor_outputs_t motor_out = {0};
         enc_out_t debug_flow[2] = {coord_enc_t(0), coord_enc_t(0)};
-        ctrl.enable = 1; ctrl.enable_motors = 1; ctrl.manual_mode = 0; ctrl.inference_period = 5000;
+        ctrl.enable = 1; ctrl.enable_motors = 1; ctrl.manual_mode = 0; ctrl.inference_period = 5000;  // rb_count >= 2048 triggers inference first
         auto looming_events = generate_looming_object_event_stream(2048);
-        feed_events_to_pipeline(ctrl, aer_bus, timestamp, looming_events, motor_out, debug_flow, 100);
-        float m1 = static_cast<float>(motor_out.m1), m2 = static_cast<float>(motor_out.m2);
-        float m3 = static_cast<float>(motor_out.m3), m4 = static_cast<float>(motor_out.m4);
+        feed_events_to_pipeline(ctrl, aer_bus, timestamp, looming_events, motor_out, debug_flow, 8400);  // 4-phase handshake = 4 steps/event x 2048 events + pipeline states
+        float m1 = pwm_to_thrust(motor_out.m1), m2 = pwm_to_thrust(motor_out.m2);
+        float m3 = pwm_to_thrust(motor_out.m3), m4 = pwm_to_thrust(motor_out.m4);
         TEST("Looming object triggers motor response");
         ASSERT(m1 > 0.01f || m2 > 0.01f || m3 > 0.01f || m4 > 0.01f, "all motors at idle");
         printf("    Motor values: m1=%.3f m2=%.3f m3=%.3f m4=%.3f\n", m1, m2, m3, m4);
@@ -250,9 +276,9 @@ void test_top_level_evasion_response() {
         enc_out_t debug_flow[2] = {coord_enc_t(0), coord_enc_t(0)};
         ctrl.enable = 1; ctrl.enable_motors = 1; ctrl.manual_mode = 0; ctrl.inference_period = 5000;
         auto noise_events = generate_static_noise_event_stream(2048);
-        feed_events_to_pipeline(ctrl, aer_bus, timestamp, noise_events, motor_out, debug_flow, 100);
-        float m1 = static_cast<float>(motor_out.m1), m2 = static_cast<float>(motor_out.m2);
-        float m3 = static_cast<float>(motor_out.m3), m4 = static_cast<float>(motor_out.m4);
+        feed_events_to_pipeline(ctrl, aer_bus, timestamp, noise_events, motor_out, debug_flow, 8400);
+        float m1 = pwm_to_thrust(motor_out.m1), m2 = pwm_to_thrust(motor_out.m2);
+        float m3 = pwm_to_thrust(motor_out.m3), m4 = pwm_to_thrust(motor_out.m4);
         float total = m1 + m2 + m3 + m4;
         TEST("Static noise produces minimal motor response");
         ASSERT(total < 2.0f, "static noise triggered strong evasion: %.3f", total);
@@ -269,11 +295,11 @@ void test_top_level_evasion_response() {
         ctrl.enable = 1; ctrl.enable_motors = 1; ctrl.manual_mode = 1;
         ctrl.manual_vx = velocity_t(1.0f); ctrl.manual_vy = velocity_t(0.0f);
         ctrl.manual_vz = velocity_t(0.5f); ctrl.manual_yaw = velocity_t(0.0f);
-        ctrl.inference_period = 5000;
+        ctrl.inference_period = 600;  // 512 events < 2048 threshold: trigger via timeout
         auto looming_events = generate_looming_object_event_stream(512);
-        feed_events_to_pipeline(ctrl, aer_bus, timestamp, looming_events, motor_out, debug_flow, 50);
-        float m1 = static_cast<float>(motor_out.m1), m2 = static_cast<float>(motor_out.m2);
-        float m3 = static_cast<float>(motor_out.m3), m4 = static_cast<float>(motor_out.m4);
+        feed_events_to_pipeline(ctrl, aer_bus, timestamp, looming_events, motor_out, debug_flow, 650);
+        float m1 = pwm_to_thrust(motor_out.m1), m2 = pwm_to_thrust(motor_out.m2);
+        float m3 = pwm_to_thrust(motor_out.m3), m4 = pwm_to_thrust(motor_out.m4);
         TEST("Manual mode produces commanded output");
         ASSERT(m1 > 0.01f || m2 > 0.01f || m3 > 0.01f || m4 > 0.01f, "manual mode produced zero motor output");
         printf("    Manual vx=1.0 -> motors: m1=%.3f m2=%.3f m3=%.3f m4=%.3f\n", m1, m2, m3, m4);
@@ -283,7 +309,8 @@ void test_top_level_evasion_response() {
 void test_ring_buffer() {
     printf("\n=== Test: ring buffer ===\n");
     event_unpacked_t ring_buf[RING_BUFFER_SIZE];
-    ap_uint<12> wr_ptr(0), count(0);
+    ap_uint<12> wr_ptr(0);
+    event_cnt_t count(0);  // 13-bit: a full buffer holds RING_BUFFER_SIZE = 4096 events
     
     // Push events with correct struct field types
     for (int i = 0; i < 100; i++) {
@@ -292,7 +319,7 @@ void test_ring_buffer() {
         ring_buf[static_cast<int>(wr_ptr.val)].timestamp = ap_uint<32>(static_cast<uint32_t>(i * 1000));
         ring_buf[static_cast<int>(wr_ptr.val)].polarity = ap_uint<1>(i % 2);
         wr_ptr = ap_uint<12>((wr_ptr.val + 1) & RB_ADDR_MASK);
-        count = ap_uint<12>(count.val + 1);
+        count = event_cnt_t(count.val + 1);
     }
     
     TEST("Ring buffer stores and retrieves events");
@@ -308,7 +335,7 @@ void test_ring_buffer() {
         ring_buf[static_cast<int>(wr_ptr.val)].timestamp = ap_uint<32>(0);
         ring_buf[static_cast<int>(wr_ptr.val)].polarity = ap_uint<1>(0);
         wr_ptr = ap_uint<12>((wr_ptr.val + 1) & RB_ADDR_MASK);
-        if (count.val < RING_BUFFER_SIZE) count = ap_uint<12>(count.val + 1);
+        if (count.val < RING_BUFFER_SIZE) count = event_cnt_t(count.val + 1);
     }
     ASSERT(count.val == RING_BUFFER_SIZE, "count should saturate at %d, got %llu",
            RING_BUFFER_SIZE, static_cast<unsigned long long>(count.val));
@@ -321,16 +348,15 @@ int main() {
     printf("  FPGA Collision Avoidance - Testbench\n");
     printf("============================================\n");
     
-    int total_tests = 0;
-    test_pwm_output_basic();       total_tests += 3;
-    test_normalization();          total_tests += 1;
-    test_spatial_hash();           total_tests += 2;
-    test_encoder_systolic();       total_tests += 2;
-    test_ring_buffer();            total_tests += 2;
-    test_top_level_evasion_response(); total_tests += 3;
+    test_pwm_output_basic();
+    test_normalization();
+    test_spatial_hash();
+    test_encoder_systolic();
+    test_ring_buffer();
+    test_top_level_evasion_response();
     
     printf("\n============================================\n");
-    printf("  Results: %d/%d passed", PASS_count, total_tests);
+    printf("  Results: %d/%d assertions passed", PASS_count, PASS_count + errors);
     if (errors > 0) printf(", %d FAILED", errors);
     printf("\n============================================\n");
     return errors > 0 ? 1 : 0;

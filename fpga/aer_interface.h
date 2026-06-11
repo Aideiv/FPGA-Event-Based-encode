@@ -72,8 +72,10 @@ void aer_parallel_interface(
     #pragma HLS INTERFACE axis        port=event_stream
     #pragma HLS PIPELINE II=1
 
-    // 4-phase handshake state machine
-    enum { IDLE, CAPTURE, WAIT_REQ_LOW, WAIT_ACK_LOW } state;
+    // 4-phase handshake state machine — static: the state register must
+    // persist across calls (an automatic variable here is uninitialized
+    // garbage every invocation)
+    static enum { IDLE, CAPTURE, WAIT_REQ_LOW, WAIT_ACK_LOW } state = IDLE;
     #pragma HLS RESET variable=state
 
     static aer_event_out_t captured_event;

@@ -140,7 +140,7 @@ void tile_matmul(
 // ---------------------------------------------------------------------------
 void local_geometry_encoder(
     coord_enc_t       events_txy[MAX_EVENTS][3],
-    ap_uint<12>       num_events,
+    event_cnt_t       num_events,
     knn_output_t      knn_results[MAX_EVENTS],
     encoder_weights_t weights,
     enc_out_t         flow_pred[MAX_EVENTS][2],  // (vx, vy) real-valued flow
@@ -157,11 +157,12 @@ void local_geometry_encoder(
     // -----------------------------------------------------------------------
     // Stage 1: pA = events @ A  — per-event encoding (parallel across tiles)
     // -----------------------------------------------------------------------
-    prod_t pA[MAX_EVENTS][D_ENC];
+    // static: ~4MB each — overflow the stack in C sim; HLS maps them to BRAM
+    static prod_t pA[MAX_EVENTS][D_ENC];
     #pragma HLS ARRAY_PARTITION variable=pA cyclic factor=16 dim=2
 
     STAGE1_PA:
-    for (ap_uint<12> i = 0; i < num_events; i++) {
+    for (event_cnt_t i = 0; i < num_events; i++) {
         #pragma HLS PIPELINE II=1
         tile_matmul(events_txy[i], weights, pA[i]);
     }
@@ -169,13 +170,13 @@ void local_geometry_encoder(
     // -----------------------------------------------------------------------
     // Stage 2: epA = [cos(pA), sin(pA)]  — CORDIC trig per element
     // -----------------------------------------------------------------------
-    cos_sin_t epA_real[MAX_EVENTS][D_ENC];  // cos(pA) parts
-    cos_sin_t epA_imag[MAX_EVENTS][D_ENC];  // sin(pA) parts
+    static cos_sin_t epA_real[MAX_EVENTS][D_ENC];  // cos(pA) parts
+    static cos_sin_t epA_imag[MAX_EVENTS][D_ENC];  // sin(pA) parts
     #pragma HLS ARRAY_PARTITION variable=epA_real cyclic factor=8 dim=2
     #pragma HLS ARRAY_PARTITION variable=epA_imag cyclic factor=8 dim=2
 
     STAGE2_TRIG:
-    for (ap_uint<12> i = 0; i < num_events; i++) {
+    for (event_cnt_t i = 0; i < num_events; i++) {
         #pragma HLS PIPELINE II=1
         for (int d = 0; d < D_ENC; d++) {
             #pragma HLS UNROLL factor=4
@@ -187,13 +188,13 @@ void local_geometry_encoder(
     // Stage 3: G = J @ epA  — sparse k-NN gather-accumulate
     // For each event i, G[i] = sum_{j in N(i)} epA[j]  (k terms)
     // -----------------------------------------------------------------------
-    prod_t G_real[MAX_EVENTS][D_ENC];
-    prod_t G_imag[MAX_EVENTS][D_ENC];
+    static prod_t G_real[MAX_EVENTS][D_ENC];
+    static prod_t G_imag[MAX_EVENTS][D_ENC];
     #pragma HLS ARRAY_PARTITION variable=G_real cyclic factor=8 dim=2
     #pragma HLS ARRAY_PARTITION variable=G_imag cyclic factor=8 dim=2
 
     STAGE3_SPARSE:
-    for (ap_uint<12> i = 0; i < num_events; i++) {
+    for (event_cnt_t i = 0; i < num_events; i++) {
         #pragma HLS PIPELINE II=1
         
         // Initialize accumulators
@@ -230,7 +231,7 @@ void local_geometry_encoder(
     // (vx, vy) = (norm * cos(theta), norm * sin(theta)) in pixel space
     // -----------------------------------------------------------------------
     STAGE4_OUTPUT:
-    for (ap_uint<12> i = 0; i < num_events; i++) {
+    for (event_cnt_t i = 0; i < num_events; i++) {
         #pragma HLS PIPELINE II=1
         
         enc_out_t sum_real = 0;

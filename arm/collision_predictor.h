@@ -280,7 +280,6 @@ private:
         }
 
         float mean_radial = radial_sum / count;
-        float mean_tangential = tangential_sum / count;
 
         // θ̇ = expansion rate (radial flow magnitude)
         float expansion_rate = mean_radial;
@@ -288,12 +287,12 @@ private:
         // θ = angular extent of the object
         float angular_size = obj.spatial_extent;
 
-        // τ = θ / θ̇
-        // Scale since our coordinates are normalized to [0,1):
-        // angular_size is in normalized units, expansion_rate in normalized/sec
-        // Multiply by camera FOV to convert to physical time
-        float scale_factor = cfg_.camera_fov / angular_size;
-        obj.ttc = angular_size / (expansion_rate + 1e-6f) * scale_factor;
+        // τ = θ / θ̇ — both θ and θ̇ are in the same normalized image
+        // units (extent in [0,1), flow in units/sec), so they cancel and
+        // τ comes out directly in seconds. No FOV scaling: a previous
+        // fov/θ factor here cancelled θ entirely, making TTC independent
+        // of object size and ~30x too large.
+        obj.ttc = angular_size / (expansion_rate + 1e-6f);
 
         // Clamp to realistic range
         if (obj.ttc < 0.05f) obj.ttc = 0.05f;

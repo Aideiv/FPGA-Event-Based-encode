@@ -29,6 +29,7 @@ constexpr float GRID_RADIUS = 0.15f;   // Spatial bin width (normalized coords)
 typedef ap_fixed<16,4> coord_t;    // Coordinates: [-8.0, 8.0), Q4.12
 typedef ap_fixed<32,8> dist_t;     // Squared distances: up to 256.0
 typedef ap_uint<12> event_idx_t;   // Event index: 0..4095
+typedef ap_uint<13> event_cnt_t;   // Event COUNT: 0..4096 — needs one more bit than an index
 typedef ap_uint<12> cell_idx_t;    // Cell index in hash table
 typedef ap_int<16> cell_key_t;     // Signed cell grid key
 
@@ -51,6 +52,9 @@ struct knn_output_t {
         ap_uint<6>  num_neighbors;           // Actual count (may be < K_NEIGHBORS)
         ap_uint<6>  count;                   // Alias for num_neighbors (testbench compat)
     };
+    // ap_uint's non-trivial default ctor deletes the union's (and thus the
+    // struct's) implicit default ctor — required for static arrays.
+    knn_output_t() : num_neighbors(0) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -58,6 +62,8 @@ struct knn_output_t {
 // ---------------------------------------------------------------------------
 struct grid_cell_t {
     ap_uint<9> count;                    // Number of events in this cell (0..MAX_CELL_EVENTS)
+    cell_key_t key_x, key_y;             // Owning grid key — linear probing cannot
+                                         // resolve collisions without storing the key
     event_idx_t indices[MAX_CELL_EVENTS]; // Event indices stored in this cell
 };
 
@@ -89,7 +95,7 @@ inline cell_idx_t cell_hash(cell_key_t cx, cell_key_t cy, ap_uint<12> probe) {
 // ---------------------------------------------------------------------------
 void spatial_hash_knn(
     event_packed_t events[MAX_EVENTS],
-    ap_uint<12>    num_events,
+    event_cnt_t    num_events,
     knn_output_t   knn_results[MAX_EVENTS]
 ) {
     #pragma HLS INTERFACE s_axilite port=return bundle=CTRL
@@ -114,12 +120,13 @@ void spatial_hash_knn(
 
     // Bucket events into grid
     BUCKET_EVENTS:
-    for (ap_uint<12> i = 0; i < num_events; i++) {
+    for (event_cnt_t i = 0; i < num_events; i++) {
         #pragma HLS PIPELINE II=1
         cell_key_t cx = cell_key_t(events[i].x / coord_t(GRID_RADIUS));
         cell_key_t cy = cell_key_t(events[i].y / coord_t(GRID_RADIUS));
 
-        // Linear-probe hash lookup
+        // Linear-probe hash lookup: stop at this key's own bucket or the
+        // first empty cell (claim it)
         ap_uint<12> probe = 0;
         cell_idx_t cell;
         HASH_LOOKUP:
@@ -127,10 +134,16 @@ void spatial_hash_knn(
             #pragma HLS LOOP_TRIPCOUNT min=1 max=16
             cell = cell_hash(cx, cy, probe);
             probe++;
-        } while (grid[cell].count > 0 && probe < 16);
+        } while (grid[cell].count > 0 &&
+                 !(grid[cell].key_x == cx && grid[cell].key_y == cy) &&
+                 probe < 16);
 
         // Store event index in cell bucket
         if (probe < 16 && grid[cell].count < MAX_CELL_EVENTS) {
+            if (grid[cell].count == 0) {
+                grid[cell].key_x = cx;
+                grid[cell].key_y = cy;
+            }
             ap_uint<9> pos = grid[cell].count;
             grid[cell].indices[pos] = i;
             grid[cell].count++;
@@ -142,7 +155,7 @@ void spatial_hash_knn(
     // Pipeline: II=1, latency = num_events × (9 × MAX_CELL_EVENTS + k²)
     // -----------------------------------------------------------------------
     KNN_LOOP:
-    for (ap_uint<12> i = 0; i < num_events; i++) {
+    for (event_cnt_t i = 0; i < num_events; i++) {
         #pragma HLS PIPELINE II=1
         coord_t ex = events[i].x;
         coord_t ey = events[i].y;
@@ -156,13 +169,17 @@ void spatial_hash_knn(
 
         // Search 9 neighboring cells
         SEARCH_CELLS:
-        for (ap_int<2> dx = -1; dx <= 1; dx++) {
-            for (ap_int<2> dy = -1; dy <= 1; dy++) {
+        // Plain int indices: ap_int<2> holds [-2, 1], so `dx++` past 1
+        // wraps/saturates below 2 and the loop never terminates.
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
                 #pragma HLS LOOP_FLATTEN
                 cell_key_t scx = cx + dx;
                 cell_key_t scy = cy + dy;
 
-                // Linear-probe lookup for search cell
+                // Linear-probe lookup for search cell: skip past occupied
+                // cells owned by other keys; an empty cell means the key
+                // is absent
                 ap_uint<12> probe = 0;
                 cell_idx_t cell;
                 SEARCH_HASH:
@@ -170,10 +187,13 @@ void spatial_hash_knn(
                     #pragma HLS LOOP_TRIPCOUNT min=1 max=16
                     cell = cell_hash(scx, scy, probe);
                     probe++;
-                } while (grid[cell].count > 0 && probe < 16);
+                } while (grid[cell].count > 0 &&
+                         !(grid[cell].key_x == scx && grid[cell].key_y == scy) &&
+                         probe < 16);
 
-                // Iterate events in this cell
-                if (probe < 16) {
+                // Iterate events in this cell (only if it's this key's bucket)
+                if (probe < 16 && grid[cell].count > 0 &&
+                    grid[cell].key_x == scx && grid[cell].key_y == scy) {
                     ap_uint<9> cell_count = grid[cell].count;
                     if (cell_count > MAX_CELL_EVENTS) cell_count = MAX_CELL_EVENTS;
 

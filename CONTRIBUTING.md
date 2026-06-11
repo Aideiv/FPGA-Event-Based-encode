@@ -7,7 +7,11 @@ git clone https://github.com/Enotrium/FPGA-Event-Based-encode
 cd FPGA-Event-Based-encode
 pip install -e .
 make install
+pip install pre-commit && pre-commit install   # flake8 + clang-format on commit
 ```
+
+No local toolchain? `make docker-test` builds the pinned environment
+(Python 3.11, g++-13, CPU torch) and runs the full suite inside it.
 
 ## Running Tests
 

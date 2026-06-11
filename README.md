@@ -308,18 +308,4 @@ python train/s1_train.py --params FPGAParams
 }
 ```
 
-Based on VecKM:
-```
-@InProceedings{pmlr-v235-yuan24b,
-  title = {A Linear Time and Space Local Point Cloud Geometry Encoder
-           via Vectorized Kernel Mixture (VecKM)},
-  author = {Yuan, Dehao and Fermuller, Cornelia and Rabbani, Tahseen and
-            Huang, Furong and Aloimonos, Yiannis},
-  booktitle = {Proceedings of the 41st International Conference on
-               Machine Learning},
-  pages = {57871--57886},
-  year = {2024},
-  volume = {235},
-  series = {Proceedings of Machine Learning Research},
-  publisher = {PMLR},
-}
+

@@ -45,6 +45,9 @@ create_clock -period 10 -name clk
 set_directive_interface -mode s_axilite -bundle CTRL "collision_avoidance_top"
 set_directive_interface -mode s_axilite -bundle CTRL "collision_avoidance_top" ctrl_regs
 set_directive_interface -mode s_axilite -bundle DEBUG "collision_avoidance_top" debug_flow
+set_directive_interface -mode s_axilite -bundle FLOW "collision_avoidance_top" flow_out
+set_directive_interface -mode s_axilite -bundle FLOW "collision_avoidance_top" flow_count
+set_directive_interface -mode s_axilite -bundle FLOW "collision_avoidance_top" flow_seq
 
 # Data interfaces (BRAM/stream for high-throughput paths)
 set_directive_interface -mode bram "collision_avoidance_top" events

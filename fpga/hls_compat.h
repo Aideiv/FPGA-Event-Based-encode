@@ -220,6 +220,12 @@ class ap_fixed {
         r.val_ = sat(val_ << n);
         return r;
     }
+    // raw fixed-point bit-slice — mirrors Vitis ap_fixed::range(hi, lo)
+    ap_uint<W> range(int hi = W - 1, int lo = 0) const {
+        const int w = hi - lo + 1;
+        const uint64_t mask = (w >= 64) ? ~0ULL : ((1ULL << w) - 1);
+        return ap_uint<W>((static_cast<uint64_t>(val_) >> lo) & mask);
+    }
     // Comparisons intentionally omitted: they resolve through the implicit
     // float conversion (member overloads would be ambiguous against it
     // when comparing with int/float literals).
@@ -281,6 +287,12 @@ class ap_ufixed {
     bool operator<=(ap_ufixed o) const { return val_ <= o.val_; }
     bool operator==(ap_ufixed o) const { return val_ == o.val_; }
     bool operator!=(ap_ufixed o) const { return val_ != o.val_; }
+    // raw fixed-point bit-slice — mirrors Vitis ap_ufixed::range(hi, lo)
+    ap_uint<W> range(int hi = W - 1, int lo = 0) const {
+        const int w = hi - lo + 1;
+        const uint64_t mask = (w >= 64) ? ~0ULL : ((1ULL << w) - 1);
+        return ap_uint<W>((val_ >> lo) & mask);
+    }
 };
 
 // ===========================================================================

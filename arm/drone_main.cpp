@@ -6,7 +6,7 @@
 //
 // Architecture:
 //   while(1):
-//     1. Read flow vectors from FPGA encoder output (AXI4-Stream DMA)
+//     1. Read flow vectors from FPGA encoder output (AXI4-Lite FLOW bundle)
 //     2. Convert to EventFlow structs
 //     3. Run CollisionPredictor::assess() → ThreatAssessment
 //     4. Run EvasionController::compute_command() → EvasionCommand
@@ -25,6 +25,7 @@
 
 #include "collision_predictor.h"
 #include "evasion_controller.h"
+#include "fpga_interface.h"
 #include "kalman_tracker.h"
 
 // FreeRTOS or bare-metal alternatives
@@ -39,26 +40,6 @@
 #define SLEEP_MS(ms) std::this_thread::sleep_for(std::chrono::milliseconds(ms))
 #endif
 
-// ---------------------------------------------------------------------------
-// FPGA AXI Register Map (AXI4-Lite base addresses)
-// These map to the control_regs_t struct in fpga/top_level.cpp
-// ---------------------------------------------------------------------------
-#define FPGA_BASE_ADDR 0x43C00000  // Example AXI address
-#define REG_ENABLE (FPGA_BASE_ADDR + 0x00)
-#define REG_ENABLE_MOTORS (FPGA_BASE_ADDR + 0x04)
-#define REG_INFERENCE_PERIOD (FPGA_BASE_ADDR + 0x08)
-#define REG_MANUAL_VX (FPGA_BASE_ADDR + 0x0C)
-#define REG_MANUAL_VY (FPGA_BASE_ADDR + 0x10)
-#define REG_MANUAL_VZ (FPGA_BASE_ADDR + 0x14)
-#define REG_MANUAL_YAW (FPGA_BASE_ADDR + 0x18)
-#define REG_MANUAL_MODE (FPGA_BASE_ADDR + 0x1C)
-#define REG_EVENT_COUNT (FPGA_BASE_ADDR + 0x20)
-#define REG_FLOW_PRED_BASE (FPGA_BASE_ADDR + 0x100)  // Flow data from encoder
-
-// DMA configuration for AXI4-Stream from encoder
-#define DMA_RX_BASE 0x40400000
-#define DMA_MAX_PACKET_SIZE (4096 * 8)  // 4096 events × 8 bytes per flow vec
-
 using namespace drone;
 
 // ---------------------------------------------------------------------------
@@ -66,115 +47,6 @@ using namespace drone;
 // ---------------------------------------------------------------------------
 static std::atomic<bool> g_running{true};
 static std::atomic<bool> g_motors_armed{false};
-
-// ---------------------------------------------------------------------------
-// Simulated FPGA register access (replace with actual MMIO for hardware)
-// On actual Zynq: mmap /dev/mem → volatile pointer to FPGA AXI region
-// ---------------------------------------------------------------------------
-class FpgaInterface {
-   public:
-    FpgaInterface() {
-        // On real hardware: mmap FPGA AXI region
-        // void* ptr = mmap(NULL, 0x10000, PROT_READ|PROT_WRITE, MAP_SHARED, fd, FPGA_BASE_ADDR);
-        // registers_ = reinterpret_cast<volatile uint32_t*>(ptr);
-
-        // Simulation: allocate local memory for testing
-        registers_ = new volatile uint32_t[128]();
-    }
-
-    ~FpgaInterface() { delete[] registers_; }
-
-    void write_register(uint32_t offset, uint32_t value) {
-        registers_[(offset - FPGA_BASE_ADDR) / 4] = value;
-    }
-
-    uint32_t read_register(uint32_t offset) { return registers_[(offset - FPGA_BASE_ADDR) / 4]; }
-
-    // -----------------------------------------------------------------
-    // Read flow vectors from FPGA encoder output (AXI4-Stream)
-    // Returns event_count flow vectors
-    //
-    // NOTE: In the current FPGA top_level.cpp, flow_pred data is stored
-    // in internal static BRAM arrays and only debug_flow[2] is exposed
-    // via AXI4-Lite. A future enhancement should map flow_pred[] to an
-    // AXI-readable address range (e.g., s_axilite bundle=MEM_FLOW) so
-    // the ARM can read per-event flow vectors for collision prediction.
-    // Until then, this function returns dummy data.
-    // -----------------------------------------------------------------
-    int read_flow_vectors(std::vector<EventFlow>& events, int max_events) {
-        events.clear();
-
-        uint32_t event_count = read_register(REG_EVENT_COUNT);
-        if (event_count == 0 || event_count > static_cast<uint32_t>(max_events)) {
-            return 0;
-        }
-
-        events.reserve(event_count);
-
-        // Read packed flow + position data from FPGA BRAM
-        for (uint32_t i = 0; i < event_count; ++i) {
-            // Each event: 2 × 32bit for flow (vx, vy as float) + position data
-            uint32_t base = (REG_FLOW_PRED_BASE - FPGA_BASE_ADDR) / 4 + i * 4;
-
-            EventFlow ev;
-            // Reconstruct float from fixed-point (INT16.Q8 → float)
-            uint32_t vx_raw = registers_[base + 0];
-            uint32_t vy_raw = registers_[base + 1];
-            uint32_t x_raw = registers_[base + 2];
-            uint32_t y_raw = registers_[base + 3];
-            std::memcpy(&ev.vx, &vx_raw, sizeof(float));
-            std::memcpy(&ev.vy, &vy_raw, sizeof(float));
-            std::memcpy(&ev.x, &x_raw, sizeof(float));
-            std::memcpy(&ev.y, &y_raw, sizeof(float));
-            ev.t = i;  // Sequential within this batch
-
-            events.push_back(ev);
-        }
-
-        return event_count;
-    }
-
-    // -----------------------------------------------------------------
-    // Write velocity command to FPGA PWM module
-    // -----------------------------------------------------------------
-    void write_velocity_command(const EvasionCommand& cmd) {
-        // Convert float velocities to fixed-point for FPGA
-        // ap_fixed<16,4>: [-8.0, 8.0) range, Q4.12
-        int32_t vx_fp = static_cast<int32_t>(cmd.velocity_x * 4096.0f);  // 2^12
-        int32_t vy_fp = static_cast<int32_t>(cmd.velocity_y * 4096.0f);
-        int32_t vz_fp = static_cast<int32_t>(cmd.velocity_z * 4096.0f);
-        int32_t yaw_fp = static_cast<int32_t>(cmd.yaw_rate * 4096.0f);
-
-        // Clamp to INT16 range
-        auto clamp_int16 = [](int32_t v) -> uint32_t {
-            if (v > 32767) v = 32767;
-            if (v < -32768) v = -32768;
-            return static_cast<uint32_t>(v & 0xFFFF);
-        };
-
-        write_register(REG_MANUAL_VX, clamp_int16(vx_fp));
-        write_register(REG_MANUAL_VY, clamp_int16(vy_fp));
-        write_register(REG_MANUAL_VZ, clamp_int16(vz_fp));
-        write_register(REG_MANUAL_YAW, clamp_int16(yaw_fp));
-
-        // Set manual mode to feed computed commands to PWM
-        write_register(REG_MANUAL_MODE, 1);
-    }
-
-    void enable(bool motors) {
-        write_register(REG_ENABLE, 1);
-        write_register(REG_ENABLE_MOTORS, motors ? 1 : 0);
-        write_register(REG_INFERENCE_PERIOD, 100000);  // 1kHz inference trigger
-    }
-
-    void disable() {
-        write_register(REG_ENABLE, 0);
-        write_register(REG_ENABLE_MOTORS, 0);
-    }
-
-   private:
-    volatile uint32_t* registers_;
-};
 
 // ---------------------------------------------------------------------------
 // Telemetry / logging

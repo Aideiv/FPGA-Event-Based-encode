@@ -78,7 +78,15 @@ SimulatedEvents generate_static_noise_event_stream(int n_events) {
 
 void feed_events_to_pipeline(control_regs_t& ctrl, aer_bus_t& aer_bus, ap_uint<64>& timestamp,
                              const SimulatedEvents& events, motor_outputs_t& motor_out,
-                             enc_out_t debug_flow[2], int steps = 100) {
+                             enc_out_t debug_flow[2], int steps = 100,
+                             ap_uint<32>* flow_out = nullptr, ap_uint<32>* flow_count = nullptr,
+                             ap_uint<32>* flow_seq = nullptr) {
+    // Tests that don't inspect the FLOW bundle share throwaway buffers
+    static ap_uint<32> default_flow_out[FLOW_OUT_WORDS];
+    static ap_uint<32> default_flow_count, default_flow_seq;
+    if (!flow_out) flow_out = default_flow_out;
+    if (!flow_count) flow_count = &default_flow_count;
+    if (!flow_seq) flow_seq = &default_flow_seq;
     size_t event_idx = 0;
     ctrl.enable = 1;
     ctrl.enable_motors = 1;
@@ -100,7 +108,8 @@ void feed_events_to_pipeline(control_regs_t& ctrl, aer_bus_t& aer_bus, ap_uint<6
             aer_bus.req = 1;
             event_idx++;
         }
-        collision_avoidance_top(ctrl, aer_bus, timestamp, motor_out, debug_flow);
+        collision_avoidance_top(ctrl, aer_bus, timestamp, motor_out, debug_flow, flow_out,
+                                *flow_count, *flow_seq);
     }
 }
 
@@ -343,6 +352,66 @@ void test_top_level_evasion_response() {
     }
 }
 
+void test_flow_export() {
+    printf("\n=== Test: per-event flow export (AXI FLOW bundle) ===\n");
+    control_regs_t ctrl;
+    aer_bus_t aer_bus = {0};
+    ap_uint<64> timestamp(0);
+    motor_outputs_t motor_out = {0};
+    enc_out_t debug_flow[2] = {coord_enc_t(0), coord_enc_t(0)};
+    static ap_uint<32> flow_out[FLOW_OUT_WORDS];
+    ap_uint<32> flow_count(0), flow_seq(0);
+    ctrl.enable = 1;
+    ctrl.enable_motors = 1;
+    ctrl.manual_mode = 0;
+    ctrl.inference_period = 5000;
+    auto looming_events = generate_looming_object_event_stream(2048);
+    feed_events_to_pipeline(ctrl, aer_bus, timestamp, looming_events, motor_out, debug_flow, 8400,
+                            flow_out, &flow_count, &flow_seq);
+
+    TEST("Flow export produces a bounded, non-zero count");
+    ASSERT(flow_count.val > 0 && flow_count.val <= FLOW_MAX_OUT, "flow_count=%llu out of (0, %d]",
+           static_cast<unsigned long long>(flow_count.val), FLOW_MAX_OUT);
+
+    TEST("Flow export completed at least one generation");
+    ASSERT(flow_seq.val >= 1, "flow_seq never advanced");
+
+    TEST("Entry 0 flow word matches the DEBUG bundle bit-for-bit");
+    ASSERT((flow_out[1].val & 0xFFFF) == debug_flow[0].range(15, 0).val &&
+               ((flow_out[1].val >> 16) & 0xFFFF) == debug_flow[1].range(15, 0).val,
+           "FLOW/DEBUG mismatch: flow_out[1]=0x%08llx debug=(0x%04llx, 0x%04llx)",
+           static_cast<unsigned long long>(flow_out[1].val),
+           static_cast<unsigned long long>(debug_flow[0].range(15, 0).val),
+           static_cast<unsigned long long>(debug_flow[1].range(15, 0).val));
+
+    TEST("Decoded positions and flows are in range");
+    bool in_range = true;
+    int n_check = static_cast<int>(flow_count.val);
+    if (n_check > 10) n_check = 10;
+    for (int i = 0; i < n_check; i++) {
+        // UQ4.12 positions, Q8.8 flows — same decode the ARM uses
+        float x = static_cast<float>(flow_out[2 * i].val & 0xFFFF) / 4096.0f;
+        float y = static_cast<float>((flow_out[2 * i].val >> 16) & 0xFFFF) / 4096.0f;
+        float vx = static_cast<int16_t>(flow_out[2 * i + 1].val & 0xFFFF) / 256.0f;
+        float vy = static_cast<int16_t>((flow_out[2 * i + 1].val >> 16) & 0xFFFF) / 256.0f;
+        if (!(x >= 0.0f && x < 1.0f && y >= 0.0f && y < 1.0f) || std::fabs(vx) >= 128.0f ||
+            std::fabs(vy) >= 128.0f) {
+            in_range = false;
+            break;
+        }
+    }
+    ASSERT(in_range, "decoded entry escaped UQ4.12/Q8.8 range");
+
+    TEST("Generation counter advances on a new batch");
+    uint64_t seq_first = flow_seq.val;
+    auto more_events = generate_looming_object_event_stream(2048);
+    feed_events_to_pipeline(ctrl, aer_bus, timestamp, more_events, motor_out, debug_flow, 8400,
+                            flow_out, &flow_count, &flow_seq);
+    ASSERT(flow_seq.val > seq_first, "flow_seq did not advance: %llu -> %llu",
+           static_cast<unsigned long long>(seq_first),
+           static_cast<unsigned long long>(flow_seq.val));
+}
+
 void test_ring_buffer() {
     printf("\n=== Test: ring buffer ===\n");
     event_unpacked_t ring_buf[RING_BUFFER_SIZE];
@@ -397,6 +466,7 @@ int main() {
     test_encoder_systolic();
     test_ring_buffer();
     test_top_level_evasion_response();
+    test_flow_export();
 
     printf("\n============================================\n");
     printf("  Results: %d/%d assertions passed", PASS_count, PASS_count + errors);

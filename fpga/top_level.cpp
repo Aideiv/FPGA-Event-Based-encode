@@ -29,6 +29,17 @@ typedef ap_axiu<48, 4, 0, 0> axis_event_t;
 #endif
 
 // ---------------------------------------------------------------------------
+// Per-event flow export (s_axilite bundle FLOW)
+// Bounded to the first FLOW_MAX_OUT events of a batch: a full 4096-entry
+// window would need 32KB of AXI4-Lite space and ~8k single-beat PS reads
+// per 100Hz frame; 1024 entries (8KB) read in ~0.6ms and exceed what the
+// ARM clusterer consumes (min_events_per_cluster is 30-50).
+// Mirrored by FLOW_MAX_OUT in arm/fpga_interface.h — keep in sync.
+// ---------------------------------------------------------------------------
+#define FLOW_MAX_OUT 1024
+#define FLOW_OUT_WORDS (2 * FLOW_MAX_OUT)
+
+// ---------------------------------------------------------------------------
 // Top-Level Control Registers (AXI4-Lite addressable)
 // ---------------------------------------------------------------------------
 struct control_regs_t {
@@ -51,16 +62,26 @@ struct control_regs_t {
 //   aer_timestamp   : System timestamp for event tagging
 //   motor_out       : 4-channel PWM output struct
 //   debug_flow      : Debug output: first event's (vx, vy) for monitoring
+//   flow_out        : Per-event (pos, flow) export, 2 words per entry i:
+//                       word 2i   bits[15:0]=x (UQ4.12)  bits[31:16]=y (UQ4.12)
+//                       word 2i+1 bits[15:0]=vx (Q8.8)   bits[31:16]=vy (Q8.8)
+//   flow_count      : Valid entries in flow_out (0..FLOW_MAX_OUT)
+//   flow_seq        : Export generation counter (seqlock) — written last;
+//                     ARM rereads it to detect a torn read and retries
 // ---------------------------------------------------------------------------
 void collision_avoidance_top(control_regs_t& ctrl_regs, aer_bus_t& aer_bus,
                              ap_uint<64> aer_timestamp, motor_outputs_t& motor_out,
-                             enc_out_t debug_flow[2]  // (vx, vy) of first event for debug
-) {
+                             enc_out_t debug_flow[2],  // (vx, vy) of first event for debug
+                             ap_uint<32> flow_out[FLOW_OUT_WORDS], ap_uint<32>& flow_count,
+                             ap_uint<32>& flow_seq) {
 #pragma HLS INTERFACE s_axilite port = return bundle = CTRL
 #pragma HLS INTERFACE s_axilite port = ctrl_regs bundle = CTRL
 #pragma HLS INTERFACE ap_none port = aer_timestamp
 #pragma HLS INTERFACE ap_none port = motor_out
 #pragma HLS INTERFACE s_axilite port = debug_flow bundle = DEBUG
+#pragma HLS INTERFACE s_axilite port = flow_out bundle = FLOW
+#pragma HLS INTERFACE s_axilite port = flow_count bundle = FLOW
+#pragma HLS INTERFACE s_axilite port = flow_seq bundle = FLOW
 
     // -------------------------------------------------------------------
     // Internal state
@@ -234,6 +255,34 @@ void collision_avoidance_top(control_regs_t& ctrl_regs, aer_bus_t& aer_bus,
                 // Debug output: first event's flow
                 debug_flow[0] = flow_pred[0][0];
                 debug_flow[1] = flow_pred[0][1];
+
+                // Export per-event (pos, flow) to the AXI4-Lite FLOW bundle.
+                // ring_buffer_events is untouched between NORMALIZE and here
+                // (no ingest outside COLLECT_EVENTS), so flow_pred[i] maps to
+                // ring_buffer_events[(read_ptr + i) & RB_ADDR_MASK].
+                // Seqlock: data, then count, then seq — seq lands last so the
+                // ARM can detect a read that straddled an export.
+                static ap_uint<32> flow_generation = 0;
+                event_cnt_t export_count = rb_count;
+                if (export_count > FLOW_MAX_OUT) export_count = FLOW_MAX_OUT;
+                ap_uint<12> exp_ptr;
+                if (rb_write_ptr >= rb_count) {
+                    exp_ptr = rb_write_ptr - rb_count;
+                } else {
+                    exp_ptr = rb_write_ptr + RING_BUFFER_SIZE - rb_count;
+                }
+            FLOW_EXPORT:
+                for (event_cnt_t i = 0; i < export_count; i++) {
+#pragma HLS PIPELINE II = 2
+                    ap_uint<12> addr = (exp_ptr + i) & RB_ADDR_MASK;
+                    flow_out[2 * i] = (ap_uint<32>(ring_buffer_events[addr].y.range(15, 0)) << 16) |
+                                      ap_uint<32>(ring_buffer_events[addr].x.range(15, 0));
+                    flow_out[2 * i + 1] = (ap_uint<32>(flow_pred[i][1].range(15, 0)) << 16) |
+                                          ap_uint<32>(flow_pred[i][0].range(15, 0));
+                }
+                flow_count = ap_uint<32>(export_count);
+                flow_generation++;
+                flow_seq = flow_generation;
 
                 // Generate motor outputs
                 // Evasion: move away from mean flow direction

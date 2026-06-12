@@ -89,7 +89,26 @@ Base address: `0x43C00000` (AXI4-Lite slave)
 | 0x18 | `manual_yaw` | R/W | Manual yaw rate |
 | 0x1C | `manual_mode` | R/W | 1=manual, 0=auto |
 | 0x20 | `event_count` | RO | Events in ring buffer |
-| 0x100+ | `flow_pred` | RO | Flow vector data (4096×8B) |
+
+### FLOW bundle — per-event flow export
+
+Base address: `0x43C10000` (second AXI4-Lite slave, bundle `FLOW`). Offsets
+below follow standard Vitis s_axilite allocation but are **design-time
+placeholders** — the generated `xcollision_avoidance_top_hw.h` is
+authoritative after synthesis.
+
+| Offset | Register | Access | Description |
+|--------|----------|--------|-------------|
+| 0x10 | `flow_count` | RO | Valid entries (0..1024) |
+| 0x18 | `flow_seq` | RO | Export generation counter (seqlock) |
+| 0x2000 + 8i | `flow_out[2i]` | RO | bits[15:0]=x (UQ4.12), bits[31:16]=y (UQ4.12) |
+| 0x2004 + 8i | `flow_out[2i+1]` | RO | bits[15:0]=vx (Q8.8), bits[31:16]=vy (Q8.8) |
+
+Read protocol (torn-read safe): read `flow_seq`, then `flow_count` and the
+data words, then `flow_seq` again — if it changed, the FPGA exported a new
+batch mid-read; retry. Export is bounded to the first 1024 events of a batch
+(8KB window); the ARM clusterer needs only 30–50 events per object. See
+`arm/fpga_interface.h` for the matching decode.
 
 ## Hardware Integration
 

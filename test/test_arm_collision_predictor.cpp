@@ -17,6 +17,7 @@
 
 #include "arm/collision_predictor.h"
 #include "arm/evasion_controller.h"
+#include "arm/fpga_interface.h"
 
 using namespace drone;
 
@@ -283,6 +284,71 @@ void test_safe_bearing() {
 }
 
 // ===========================================================================
+// FPGA INTERFACE TESTS — FLOW bundle register decode
+// ===========================================================================
+
+void test_fpga_flow_register_roundtrip() {
+    printf("\n=== FPGA flow register round-trip ===\n");
+
+    FpgaInterface fpga;
+    auto truth = make_looming_flow_vectors(500, 1.5f);
+    for (size_t i = 0; i < truth.size(); i++) {
+        fpga.write_register(REG_FLOW_DATA + 8 * i,
+                            FpgaInterface::pack_position(truth[i].x, truth[i].y));
+        fpga.write_register(REG_FLOW_DATA + 8 * i + 4,
+                            FpgaInterface::pack_flow(truth[i].vx, truth[i].vy));
+    }
+    fpga.write_register(REG_FLOW_COUNT, static_cast<uint32_t>(truth.size()));
+    fpga.write_register(REG_FLOW_SEQ, 1);
+
+    std::vector<EventFlow> events;
+    int n = fpga.read_flow_vectors(events, 4096);
+
+    TEST("Round-trip returns all packed entries");
+    CHECK(n == static_cast<int>(truth.size()) && events.size() == truth.size(),
+          "expected %zu, got %d", truth.size(), n);
+
+    TEST("Decoded values match within quantization error");
+    bool within_eps = true;
+    const float pos_eps = 1.0f / 4096.0f + 1e-5f;  // UQ4.12 LSB
+    const float flow_eps = 1.0f / 256.0f + 1e-5f;  // Q8.8 LSB
+    for (int i = 0; i < n; i++) {
+        if (std::fabs(events[i].x - truth[i].x) > pos_eps ||
+            std::fabs(events[i].y - truth[i].y) > pos_eps ||
+            std::fabs(events[i].vx - truth[i].vx) > flow_eps ||
+            std::fabs(events[i].vy - truth[i].vy) > flow_eps) {
+            within_eps = false;
+            break;
+        }
+    }
+    CHECK(within_eps, "quantization error exceeded UQ4.12/Q8.8 bounds");
+
+    TEST("Decoded flow still drives collision prediction end-to-end");
+    CollisionPredictor::Config cfg;
+    cfg.cluster_radius = 0.15f;
+    cfg.flow_similarity_threshold = 0.5f;
+    cfg.min_events_per_cluster = 10;
+    cfg.safety_time_threshold = 2.0f;
+    CollisionPredictor predictor(cfg);
+    ThreatAssessment result = predictor.assess(events);
+    CHECK(result.threat_detected && !result.objects.empty() && result.objects[0].ttc < 100.0f,
+          "register-decoded flow failed to produce a finite-TTC threat");
+
+    TEST("Zero count returns no events");
+    fpga.write_register(REG_FLOW_COUNT, 0);
+    CHECK(fpga.read_flow_vectors(events, 4096) == 0, "expected 0 events for zero count");
+
+    TEST("Oversized count clamps to FLOW_MAX_OUT");
+    fpga.write_register(REG_FLOW_COUNT, 5000);
+    CHECK(fpga.read_flow_vectors(events, 4096) == FLOW_MAX_OUT, "expected clamp to %d",
+          FLOW_MAX_OUT);
+
+    TEST("max_events caps the returned batch");
+    fpga.write_register(REG_FLOW_COUNT, static_cast<uint32_t>(truth.size()));
+    CHECK(fpga.read_flow_vectors(events, 50) == 50, "expected 50 events");
+}
+
+// ===========================================================================
 // EVASION CONTROLLER TESTS
 // ===========================================================================
 
@@ -473,6 +539,9 @@ int main() {
     test_random_noise_low_urgency();
     test_multi_object_clustering();
     test_safe_bearing();
+
+    printf("\n--- FPGA Interface Tests ---\n");
+    test_fpga_flow_register_roundtrip();
 
     printf("\n--- Evasion Controller Tests ---\n");
     test_evasion_controller_levels();

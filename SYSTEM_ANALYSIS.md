@@ -102,6 +102,12 @@ The brace initialization has wrong types and the layout doesn't match the struct
 The `#ifdef MAVLINK_AVAILABLE` guard means the real implementation is gated. The manual stub (`pack_set_position_target_local_ned_manual`) sends malformed packets (CRC always 0). On real hardware, the flight controller would reject these packets.
 
 ### 10. `drone_main.cpp` simulation path won't work
+**FIXED** — flow is now exported via the s_axilite `FLOW` bundle (first 1024
+events as packed UQ4.12 positions + Q8.8 flows, `flow_count` + seqlock
+`flow_seq`); `read_flow_vectors()` in `arm/fpga_interface.h` decodes it with
+torn-read retry, and the sim register file covers the full window. See
+`fpga/README.md` § FLOW bundle. Original finding:
+
 The `FpgaInterface` class uses `new volatile uint32_t[128]()` for simulated registers, but:
 - The register offsets (e.g., `REG_FLOW_PRED_BASE`) assume specific memory layout
 - The `read_flow_vectors()` method expects flow data at specific register offsets
@@ -225,7 +231,7 @@ Most `.h` and `.cpp` files lack copyright/license headers despite the repo havin
 | 🔴 CRITICAL | Encoder weights never initialized | `fpga/top_level.cpp:91` | Zero flow output on FPGA |
 | 🔴 CRITICAL | Testbench uses wrong struct types | `fpga/testbench.cpp:424` | Compilation or silent data corruption |
 | 🟠 MODERATE | MAVLink stub sends bad CRC | `arm/mavlink_bridge.h:455` | PX4 rejects packets |
-| 🟠 MODERATE | ARM reads flow from non-existent AXI regs | `arm/drone_main.cpp:111-128` | ARM gets zero flow vectors |
+| 🟠 MODERATE | ~~ARM reads flow from non-existent AXI regs~~ **FIXED**: s_axilite `FLOW` bundle + seqlock decode | `fpga/top_level.cpp` / `arm/fpga_interface.h` | ARM reads real per-event flow |
 | 🟠 MODERATE | `ap_axiu<48,0,0,0>` invalid template | `fpga/top_level.cpp:27` | AXI interface may be malformed |
 | 🟠 MODERATE | Stream is LIFO in simulation | `fpga/hls_compat.h:213-214` | C-sim differs from RTL sim |
 | 🟠 MODERATE | `>> i` shift on ap_fixed not implemented | `fpga/encoder_systolic.h:79-80` | Won't compile in sim |
